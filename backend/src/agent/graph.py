@@ -97,8 +97,8 @@ def confirmation_question(state: OverallState, config: RunnableConfig) -> dict:
     # Generate confirmation question
     result = structured_llm.invoke(formatted_prompt)
 
-    # Return as AI message
-    confirmation_message = f"{result.question}\n\n(This question helps me provide more accurate information. You can say 'answer immediately without questions' to skip confirmation.)"
+    # Return as AI message with LLM-generated skip instruction
+    confirmation_message = f"{result.question}\n\n({result.skip_instruction})"
 
     return {
         "messages": [AIMessage(content=confirmation_message)],

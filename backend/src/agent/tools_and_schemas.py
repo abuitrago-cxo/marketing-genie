@@ -27,3 +27,4 @@ class ConfirmationQuestion(BaseModel):
     """Schema for structured output of confirmation questions"""
     question: str = Field(description="Confirmation question for the user")
     rationale: str = Field(description="Reason why this question is important")
+    skip_instruction: str = Field(description="Brief instruction on how to skip confirmation, explaining why this question is being asked")
