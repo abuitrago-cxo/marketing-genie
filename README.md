@@ -61,6 +61,48 @@ This will run the backend and frontend development servers.    Open your browser
 
 _Alternatively, you can run the backend and frontend development servers separately. For the backend, open a terminal in the `backend/` directory and run `langgraph dev`. The backend API will be available at `http://127.0.0.1:2024`. It will also open a browser window to the LangGraph UI. For the frontend, open a terminal in the `frontend/` directory and run `npm run dev`. The frontend will be available at `http://localhost:5173`._
 
+### Running with Node.js Server (Alternative Local Setup)
+
+This method uses the traditional Python backend for API and the new Node.js server (located in `express_server/`) to serve the frontend and proxy API requests. This is an alternative to using the `make dev` command or running the full Docker deployment for local testing if you specifically want to use the Node.js server for the frontend.
+
+**Prerequisites:**
+- Ensure all prerequisites from the main "Getting Started" section are met (Node.js, Python, Gemini API key in `backend/.env`).
+- Dependencies for both `frontend` and `backend` should be installed as described previously.
+
+**Steps:**
+
+1.  **Build the Frontend:**
+    The Node.js server serves static files, so you need to build the frontend first.
+    ```bash
+    cd frontend
+    npm install # If you haven't already
+    npm run build
+    cd ..
+    ```
+
+2.  **Start the Python Backend API:**
+    The Python backend is still needed to handle the API calls. You can run its development server.
+    Open a terminal in the `backend/` directory:
+    ```bash
+    # Ensure your virtual environment is active if you use one
+    # Make sure .env file with GEMINI_API_KEY is present in backend/
+    pip install . # If you haven't already or if dependencies changed
+    langgraph dev
+    ```
+    This will typically start the backend API on `http://127.0.0.1:2024` or a similar port, and it might open a browser for the LangGraph UI. The important part is that the API service proxied by Vite (usually to `http://127.0.0.1:8000` by default in production-like setups, or `http://127.0.0.1:2024` if `langgraph dev` changes that) is up.
+    *Note: The Node.js server is configured by default to proxy to `http://127.0.0.1:8000`. If `langgraph dev` runs the API on a different port (e.g., 2024) for the actual API endpoints the frontend calls, you might need to adjust `PYTHON_BACKEND_URL` for the Node.js server (e.g., by setting it as an environment variable when running `node server.js` or modifying `express_server/server.js`). For this guide, we'll assume the API is available at the default proxy target of `http://127.0.0.1:8000` or that `langgraph dev` also makes it available there.*
+
+3.  **Start the Node.js Server:**
+    Open another terminal in the `express_server/` directory:
+    ```bash
+    npm install # If you haven't already or if dependencies changed
+    node server.js
+    ```
+    This will start the Node.js server, typically on `http://localhost:3000`.
+
+4.  **Access the Application:**
+    Open your browser and navigate to `http://localhost:3000/app`.
+
 ## How the Backend Agent Works (High-Level)
 
 The core of the backend is a LangGraph agent defined in `backend/src/agent/graph.py`. It follows these steps:

@@ -1,6 +1,7 @@
 volumes:
   langgraph-data:
     driver: local
+
 services:
   langgraph-redis:
     image: docker.io/redis:6
@@ -9,10 +10,11 @@ services:
       interval: 5s
       timeout: 1s
       retries: 5
+
   langgraph-postgres:
     image: docker.io/postgres:16
     ports:
-      - "5433:5432"
+      - "5433:5432" # Exposes Postgres on host port 5433 for direct access if needed
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres
@@ -25,10 +27,17 @@ services:
       timeout: 1s
       retries: 5
       interval: 5s
-  langgraph-api:
-    image: gemini-fullstack-langgraph
-    ports:
-      - "8123:8000"
+
+  python_api: # Renamed from langgraph-api
+    image: gemini-fullstack-langgraph # Using the original image name, assuming it's not rebuilt separately for this change
+    build:
+      context: .
+      dockerfile: Dockerfile # This is the original Dockerfile for the Python app
+    # No ports exposed to host directly, only to internal network on port 8000 (default for the Python app)
+    # The Node.js server will proxy to this.
+    # If direct access to Python API is needed for debugging, uncomment:
+    # ports:
+    #   - "8001:8000"
     depends_on:
       langgraph-redis:
         condition: service_healthy
@@ -36,6 +45,31 @@ services:
         condition: service_healthy
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY} # If used by Python backend
       REDIS_URI: redis://langgraph-redis:6379
       POSTGRES_URI: postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
+      # Ensure any other necessary env vars for the Python app are here
+
+  node_server:
+    build:
+      context: .
+      dockerfile: express_server/Dockerfile
+    ports:
+      - "8123:3000" # Expose Node.js server on host port 8123, mapped from container's 3000
+    depends_on:
+      python_api: # Depends on the Python API service
+        condition: service_started # Or service_healthy if Python app has a health check
+      langgraph-redis:
+        condition: service_healthy
+      langgraph-postgres:
+        condition: service_healthy
+    environment:
+      PORT: 3000 # Port for Node.js server inside the container
+      PYTHON_BACKEND_URL: http://python_api:8000 # Points to the Python service on its internal port 8000
+      # Add any other environment variables the Node.js server might need
+    # If the Node.js server needs frontend build args:
+    # build:
+    #   context: .
+    #   dockerfile: express_server/Dockerfile
+    #   args:
+    #     VITE_API_BASE_URL: http://localhost:8123/api # Example if frontend needed this at build time
