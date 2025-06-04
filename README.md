@@ -29,6 +29,7 @@ Follow these steps to get the application running locally for development and te
 
 -   Node.js and npm (or yarn/pnpm)
 -   Python 3.8+
+-   uv (https://docs.astral.sh/uv/)
 -   **`GEMINI_API_KEY`**: The backend agent requires a Google Gemini API key.
     1.  Navigate to the `backend/` directory.
     2.  Create a file named `.env` by copying the `backend/.env.example` file.
@@ -36,18 +37,8 @@ Follow these steps to get the application running locally for development and te
 
 **2. Install Dependencies:**
 
-**Backend:**
-
 ```bash
-cd backend
-pip install .
-```
-
-**Frontend:**
-
-```bash
-cd frontend
-npm install
+make setup
 ```
 
 **3. Run Development Servers:**
