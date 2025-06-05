@@ -29,6 +29,32 @@ class Configuration(BaseModel):
         },
     )
 
+    ollama_api_base_url: Optional[str] = Field(
+        default=None,
+        metadata={"description": "The base URL for the Ollama API."},
+    )
+
+    ollama_query_generator_model: Optional[str] = Field(
+        default=None,
+        metadata={
+            "description": "The name of the Ollama language model to use for query generation."
+        },
+    )
+
+    ollama_reflection_model: Optional[str] = Field(
+        default=None,
+        metadata={
+            "description": "The name of the Ollama language model to use for reflection."
+        },
+    )
+
+    ollama_answer_model: Optional[str] = Field(
+        default=None,
+        metadata={
+            "description": "The name of the Ollama language model to use for the answer."
+        },
+    )
+
     number_of_initial_queries: int = Field(
         default=3,
         metadata={"description": "The number of initial search queries to generate."},

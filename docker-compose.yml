@@ -1,7 +1,22 @@
 volumes:
   langgraph-data:
     driver: local
+  ollama_data: # New volume for Ollama
+    driver: local
 services:
+  ollama: # New Ollama service
+    image: ollama/ollama:latest
+    volumes:
+      - ./ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
   langgraph-redis:
     image: docker.io/redis:6
     healthcheck:
@@ -34,8 +49,14 @@ services:
         condition: service_healthy
       langgraph-postgres:
         condition: service_healthy
+      ollama: # Added dependency on Ollama
+        condition: service_healthy
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
       REDIS_URI: redis://langgraph-redis:6379
       POSTGRES_URI: postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
+      OLLAMA_API_BASE_URL: "http://ollama:11434" # Ollama env vars
+      OLLAMA_QUERY_GENERATOR_MODEL: "llama3"
+      OLLAMA_REFLECTION_MODEL: "llama3"
+      OLLAMA_ANSWER_MODEL: "llama3"

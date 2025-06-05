@@ -32,7 +32,13 @@ Follow these steps to get the application running locally for development and te
 -   **`GEMINI_API_KEY`**: The backend agent requires a Google Gemini API key.
     1.  Navigate to the `backend/` directory.
     2.  Create a file named `.env` by copying the `backend/.env.example` file.
-    3.  Open the `.env` file and add your Gemini API key: `GEMINI_API_KEY="YOUR_ACTUAL_API_KEY"`
+    3.  Open the `.env` file and add your Gemini API key: `GEMINI_API_KEY="YOUR_ACTUAL_API_KEY"`.
+    4.  **(Optional) To use local models with Ollama:** The `backend/.env.example` file also contains placeholder environment variables for Ollama configuration. If you wish to use local models via Ollama instead of the default Gemini models, uncomment and set the following variables in your `backend/.env` file:
+        *   `OLLAMA_API_BASE_URL`: The base URL for your Ollama API (e.g., `http://localhost:11434` if running Ollama locally, or `http://ollama:11434` if using the provided Docker Compose setup).
+        *   `OLLAMA_QUERY_GENERATOR_MODEL`: The Ollama model to use for generating search queries (e.g., `llama3`).
+        *   `OLLAMA_REFLECTION_MODEL`: The Ollama model to use for reflection (e.g., `llama3`).
+        *   `OLLAMA_ANSWER_MODEL`: The Ollama model to use for generating the final answer (e.g., `llama3`).
+        If these Ollama variables are set, the application will use Ollama models. Otherwise, it defaults to Gemini models. See the "Using with Ollama" section for more details on setting up Ollama.
 
 **2. Install Dependencies:**
 
@@ -60,6 +66,45 @@ make dev
 This will run the backend and frontend development servers.    Open your browser and navigate to the frontend development server URL (e.g., `http://localhost:5173/app`).
 
 _Alternatively, you can run the backend and frontend development servers separately. For the backend, open a terminal in the `backend/` directory and run `langgraph dev`. The backend API will be available at `http://127.0.0.1:2024`. It will also open a browser window to the LangGraph UI. For the frontend, open a terminal in the `frontend/` directory and run `npm run dev`. The frontend will be available at `http://localhost:5173`._
+
+## Using with Ollama
+
+This project supports using local models via [Ollama](https://ollama.com/) as an alternative to the default Google Gemini models.
+
+**1. Setup Ollama:**
+
+   - **Using Docker Compose (Recommended for this project):**
+     The provided `docker-compose.yml` includes an Ollama service. Simply running `docker-compose up -d` will start Ollama alongside the other services. The backend is preconfigured to connect to Ollama at `http://ollama:11434` when using Docker Compose.
+   - **Standalone Ollama:**
+     If you are not using Docker Compose for the backend, ensure your Ollama instance is running and accessible from where your backend is running (e.g., `http://localhost:11434`).
+
+**2. Pull Models into Ollama:**
+
+   You need to pull the models you intend to use into your Ollama instance.
+   - **If using Docker Compose:**
+     ```bash
+     docker-compose exec ollama ollama pull <model_name>
+     # Example:
+     docker-compose exec ollama ollama pull llama3
+     ```
+   - **If running Ollama separately:**
+     ```bash
+     ollama pull <model_name>
+     # Example:
+     ollama pull llama3
+     ```
+   You can replace `<model_name>` with any model compatible with Ollama that you wish to use (e.g., `mistral`, `codellama`, etc.).
+
+**3. Configure Environment Variables:**
+
+   As mentioned in the "Getting Started" section, set the `OLLAMA_*` environment variables in your `backend/.env` file to tell the application to use your Ollama models. For example:
+   ```env
+   OLLAMA_API_BASE_URL="http://ollama:11434" # Use http://localhost:11434 if Ollama is local and backend is not in Docker
+   OLLAMA_QUERY_GENERATOR_MODEL="llama3"
+   OLLAMA_REFLECTION_MODEL="llama3"
+   OLLAMA_ANSWER_MODEL="llama3"
+   ```
+   If these variables are set and valid, the backend will use Ollama. If they are not set or left commented out, the application will default to using the configured Gemini models.
 
 ## How the Backend Agent Works (High-Level)
 

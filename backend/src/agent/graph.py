@@ -2,6 +2,7 @@ import os
 
 from agent.tools_and_schemas import SearchQueryList, Reflection
 from dotenv import load_dotenv
+from langchain_community.llms import Ollama
 from langchain_core.messages import AIMessage
 from langgraph.types import Send
 from langgraph.graph import StateGraph
@@ -60,15 +61,6 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     if state.get("initial_search_query_count") is None:
         state["initial_search_query_count"] = configurable.number_of_initial_queries
 
-    # init Gemini 2.0 Flash
-    llm = ChatGoogleGenerativeAI(
-        model=configurable.query_generator_model,
-        temperature=1.0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
-    )
-    structured_llm = llm.with_structured_output(SearchQueryList)
-
     # Format the prompt
     current_date = get_current_date()
     formatted_prompt = query_writer_instructions.format(
@@ -77,8 +69,32 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
         number_queries=state["initial_search_query_count"],
     )
     # Generate the search queries
-    result = structured_llm.invoke(formatted_prompt)
-    return {"query_list": result.query}
+    if (
+        configurable.ollama_api_base_url
+        and configurable.ollama_query_generator_model
+    ):
+        llm = Ollama(
+            base_url=configurable.ollama_api_base_url,
+            model=configurable.ollama_query_generator_model,
+            temperature=1.0,
+            # TODO: Add other relevant Ollama parameters if necessary
+        )
+        result = llm.invoke(formatted_prompt)
+        # Assuming Ollama returns a string with queries, potentially newline-separated
+        query_list = [q.strip() for q in result.split("\n") if q.strip()]
+    else:
+        # init Gemini 2.0 Flash
+        llm = ChatGoogleGenerativeAI(
+            model=configurable.query_generator_model,
+            temperature=1.0,
+            max_retries=2,
+            api_key=os.getenv("GEMINI_API_KEY"),
+        )
+        structured_llm = llm.with_structured_output(SearchQueryList)
+        result = structured_llm.invoke(formatted_prompt)
+        query_list = result.query
+
+    return {"query_list": query_list}
 
 
 def continue_to_web_research(state: QueryGenerationState):
@@ -163,18 +179,38 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
         summaries="\n\n---\n\n".join(state["web_research_result"]),
     )
     # init Reasoning Model
-    llm = ChatGoogleGenerativeAI(
-        model=reasoning_model,
-        temperature=1.0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
-    )
-    result = llm.with_structured_output(Reflection).invoke(formatted_prompt)
+    if configurable.ollama_api_base_url and configurable.ollama_reflection_model:
+        llm = Ollama(
+            base_url=configurable.ollama_api_base_url,
+            model=configurable.ollama_reflection_model,
+            temperature=1.0,
+            # TODO: Add other relevant Ollama parameters if necessary
+        )
+        result_str = llm.invoke(formatted_prompt)
+        # Best effort parsing for Ollama string output
+        # TODO: Implement more robust parsing, possibly with JSON output from Ollama
+        is_sufficient = False  # Defaulting to False to encourage more research
+        knowledge_gap = result_str
+        if "\n" in result_str:
+            follow_up_queries = [q.strip() for q in result_str.split("\n") if q.strip()]
+        else:
+            follow_up_queries = [result_str.strip()] if result_str.strip() else []
+    else:
+        llm = ChatGoogleGenerativeAI(
+            model=reasoning_model,
+            temperature=1.0,
+            max_retries=2,
+            api_key=os.getenv("GEMINI_API_KEY"),
+        )
+        result_obj = llm.with_structured_output(Reflection).invoke(formatted_prompt)
+        is_sufficient = result_obj.is_sufficient
+        knowledge_gap = result_obj.knowledge_gap
+        follow_up_queries = result_obj.follow_up_queries
 
     return {
-        "is_sufficient": result.is_sufficient,
-        "knowledge_gap": result.knowledge_gap,
-        "follow_up_queries": result.follow_up_queries,
+        "is_sufficient": is_sufficient,
+        "knowledge_gap": knowledge_gap,
+        "follow_up_queries": follow_up_queries,
         "research_loop_count": state["research_loop_count"],
         "number_of_ran_queries": len(state["search_query"]),
     }
@@ -241,26 +277,37 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
         summaries="\n---\n\n".join(state["web_research_result"]),
     )
 
-    # init Reasoning Model, default to Gemini 2.5 Flash
-    llm = ChatGoogleGenerativeAI(
-        model=reasoning_model,
-        temperature=0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
-    )
-    result = llm.invoke(formatted_prompt)
+    # init Reasoning Model
+    if configurable.ollama_api_base_url and configurable.ollama_answer_model:
+        llm = Ollama(
+            base_url=configurable.ollama_api_base_url,
+            model=configurable.ollama_answer_model,
+            temperature=0,
+            # TODO: Add other relevant Ollama parameters if necessary
+        )
+        result_content = llm.invoke(formatted_prompt)
+    else:
+        # Default to Gemini 2.5 Flash
+        llm = ChatGoogleGenerativeAI(
+            model=reasoning_model,
+            temperature=0,
+            max_retries=2,
+            api_key=os.getenv("GEMINI_API_KEY"),
+        )
+        result_obj = llm.invoke(formatted_prompt)
+        result_content = result_obj.content
 
     # Replace the short urls with the original urls and add all used urls to the sources_gathered
     unique_sources = []
     for source in state["sources_gathered"]:
-        if source["short_url"] in result.content:
-            result.content = result.content.replace(
+        if source["short_url"] in result_content:
+            result_content = result_content.replace(
                 source["short_url"], source["value"]
             )
             unique_sources.append(source)
 
     return {
-        "messages": [AIMessage(content=result.content)],
+        "messages": [AIMessage(content=result_content)],
         "sources_gathered": unique_sources,
     }
 
