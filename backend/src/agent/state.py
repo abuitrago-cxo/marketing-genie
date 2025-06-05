@@ -21,6 +21,10 @@ class OverallState(TypedDict):
     max_research_loops: int
     research_loop_count: int
     reasoning_model: str
+    # New fields for agent routing and multi-LLM support
+    agent_type: str  # Type of agent handling the task
+    task_classification: dict  # Classification details from router
+    llm_provider: str  # LLM provider being used
 
 
 class ReflectionState(TypedDict):

@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { ProcessedEvent } from "@/components/ActivityTimeline";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { ChatMessagesView } from "@/components/ChatMessagesView";
+import { EnhancedLayout } from "@/components/enhanced/EnhancedLayout";
+import { EnhancedChatInterface } from "@/components/enhanced/EnhancedChatInterface";
 
 export default function App() {
   const [processedEventsTimeline, setProcessedEventsTimeline] = useState<
@@ -12,6 +14,7 @@ export default function App() {
   const [historicalActivities, setHistoricalActivities] = useState<
     Record<string, ProcessedEvent[]>
   >({});
+  const [useEnhancedUI] = useState(true); // Toggle for new UI
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const hasFinalizeEventOccurredRef = useRef(false);
 
@@ -152,6 +155,67 @@ export default function App() {
     window.location.reload();
   }, [thread]);
 
+  // Enhanced message format for new UI
+  const enhancedMessages = thread.messages.map((msg, index) => ({
+    ...msg,
+    content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+    activities: processedEventsTimeline.length > 0 && index === thread.messages.length - 1
+      ? processedEventsTimeline.map((event, eventIndex) => ({
+          id: `activity-${eventIndex}-${Date.now()}`,
+          type: event.title?.includes('Generating') ? 'thinking' as const :
+                event.title?.includes('Web Research') ? 'searching' as const :
+                event.title?.includes('Reflection') ? 'analyzing' as const :
+                event.title?.includes('Finalizing') ? 'completed' as const : 'thinking' as const,
+          message: event.data || 'Processing...',
+          timestamp: new Date(),
+          duration: 1000 // Default duration
+        }))
+      : [],
+    isStreaming: thread.isLoading && index === thread.messages.length - 1,
+    agentType: 'research' as const
+  }));
+
+  const handleEnhancedSendMessage = (message: string) => {
+    const newMessages: Message[] = [
+      ...(thread.messages || []),
+      {
+        type: "human",
+        content: message,
+        id: Date.now().toString(),
+      },
+    ];
+    thread.submit({
+      messages: newMessages,
+      initial_search_query_count: 3,
+      max_research_loops: 2,
+      reasoning_model: "gemini-2.5-flash-preview-04-17",
+    });
+  };
+
+  if (useEnhancedUI) {
+    return (
+      <EnhancedLayout initialView="chat">
+        {thread.messages.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <WelcomeScreen
+              handleSubmit={handleSubmit}
+              isLoading={thread.isLoading}
+              onCancel={handleCancel}
+            />
+          </div>
+        ) : (
+          <EnhancedChatInterface
+            messages={enhancedMessages}
+            isLoading={thread.isLoading}
+            onSendMessage={handleEnhancedSendMessage}
+            onStopGeneration={handleCancel}
+          />
+        )}
+      </EnhancedLayout>
+    );
+  }
+
+  // Original UI (fallback)
   return (
     <div className="flex h-screen bg-neutral-800 text-neutral-100 font-sans antialiased">
       <main className="flex-1 flex flex-col overflow-hidden max-w-4xl mx-auto w-full">

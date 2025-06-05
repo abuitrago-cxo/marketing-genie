@@ -15,7 +15,9 @@ from agent.state import (
     ReflectionState,
     WebSearchState,
 )
-from agent.configuration import Configuration
+from agent.configuration import Configuration, get_model, configure_llm_providers
+from agent.llm_manager import llm_manager
+from agent.router import agent_router, AgentType
 from agent.prompts import (
     get_current_date,
     query_writer_instructions,
@@ -33,14 +35,70 @@ from agent.utils import (
 
 load_dotenv()
 
-if os.getenv("GEMINI_API_KEY") is None:
-    raise ValueError("GEMINI_API_KEY is not set")
+# Initialize LLM providers
+def initialize_llm_providers():
+    """Initialize and configure LLM providers"""
+    config_status = configure_llm_providers()
+    print(f"LLM Providers configured: {config_status['providers_configured']}")
+    if config_status['providers_failed']:
+        print(f"LLM Providers failed: {config_status['providers_failed']}")
+    return config_status
+
+# Initialize providers on module load
+llm_config_status = initialize_llm_providers()
+
+# Fallback check for Gemini API key
+if os.getenv("GEMINI_API_KEY") is None and not llm_config_status['providers_configured']:
+    raise ValueError("No LLM providers configured. Please set at least one API key (GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY)")
 
 # Used for Google Search API
-genai_client = Client(api_key=os.getenv("GEMINI_API_KEY"))
+genai_client = Client(api_key=os.getenv("GEMINI_API_KEY")) if os.getenv("GEMINI_API_KEY") else None
 
 
 # Nodes
+def route_task(state: OverallState, config: RunnableConfig) -> OverallState:
+    """LangGraph node that routes tasks to appropriate agents based on content analysis.
+
+    Analyzes the user's message to determine the most appropriate agent type and
+    updates the state with routing information.
+
+    Args:
+        state: Current graph state containing the user's messages
+        config: Configuration for the runnable
+
+    Returns:
+        Dictionary with state update, including agent_type and task_classification
+    """
+    if not state.get("messages"):
+        return {"agent_type": AgentType.RESEARCH.value}
+
+    # Get the latest user message
+    user_message = ""
+    for msg in reversed(state["messages"]):
+        if hasattr(msg, 'type') and msg.type == "human":
+            user_message = msg.content
+            break
+
+    if not user_message:
+        return {"agent_type": AgentType.RESEARCH.value}
+
+    # Route the task
+    selected_agent, classification = agent_router.route_task(user_message)
+
+    # Update agent load
+    agent_router.update_agent_load(selected_agent, 1)
+
+    return {
+        "agent_type": selected_agent.value,
+        "task_classification": {
+            "task_type": classification.task_type,
+            "complexity": classification.complexity.value,
+            "confidence": classification.confidence,
+            "reasoning": classification.reasoning
+        }
+    }
+
+
 def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerationState:
     """LangGraph node that generates a search queries based on the User's question.
 
@@ -60,13 +118,19 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     if state.get("initial_search_query_count") is None:
         state["initial_search_query_count"] = configurable.number_of_initial_queries
 
-    # init Gemini 2.0 Flash
-    llm = ChatGoogleGenerativeAI(
-        model=configurable.query_generator_model,
-        temperature=1.0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
-    )
+    # Get LLM using multi-provider system
+    try:
+        llm = get_model(configurable.query_generator_model)
+        llm.temperature = 1.0
+    except Exception as e:
+        # Fallback to direct Gemini initialization
+        print(f"Warning: Multi-LLM system failed, falling back to Gemini: {e}")
+        llm = ChatGoogleGenerativeAI(
+            model=configurable.query_generator_model,
+            temperature=1.0,
+            max_retries=2,
+            api_key=os.getenv("GEMINI_API_KEY"),
+        )
     structured_llm = llm.with_structured_output(SearchQueryList)
 
     # Format the prompt
@@ -162,13 +226,19 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
         research_topic=get_research_topic(state["messages"]),
         summaries="\n\n---\n\n".join(state["web_research_result"]),
     )
-    # init Reasoning Model
-    llm = ChatGoogleGenerativeAI(
-        model=reasoning_model,
-        temperature=1.0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
-    )
+    # Get LLM using multi-provider system
+    try:
+        llm = get_model(reasoning_model)
+        llm.temperature = 1.0
+    except Exception as e:
+        # Fallback to direct Gemini initialization
+        print(f"Warning: Multi-LLM system failed, falling back to Gemini: {e}")
+        llm = ChatGoogleGenerativeAI(
+            model=reasoning_model,
+            temperature=1.0,
+            max_retries=2,
+            api_key=os.getenv("GEMINI_API_KEY"),
+        )
     result = llm.with_structured_output(Reflection).invoke(formatted_prompt)
 
     return {
@@ -241,13 +311,19 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
         summaries="\n---\n\n".join(state["web_research_result"]),
     )
 
-    # init Reasoning Model, default to Gemini 2.5 Flash
-    llm = ChatGoogleGenerativeAI(
-        model=reasoning_model,
-        temperature=0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
-    )
+    # Get LLM using multi-provider system
+    try:
+        llm = get_model(reasoning_model)
+        llm.temperature = 0
+    except Exception as e:
+        # Fallback to direct Gemini initialization
+        print(f"Warning: Multi-LLM system failed, falling back to Gemini: {e}")
+        llm = ChatGoogleGenerativeAI(
+            model=reasoning_model,
+            temperature=0,
+            max_retries=2,
+            api_key=os.getenv("GEMINI_API_KEY"),
+        )
     result = llm.invoke(formatted_prompt)
 
     # Replace the short urls with the original urls and add all used urls to the sources_gathered
@@ -269,14 +345,17 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
 builder = StateGraph(OverallState, config_schema=Configuration)
 
 # Define the nodes we will cycle between
+builder.add_node("route_task", route_task)
 builder.add_node("generate_query", generate_query)
 builder.add_node("web_research", web_research)
 builder.add_node("reflection", reflection)
 builder.add_node("finalize_answer", finalize_answer)
 
-# Set the entrypoint as `generate_query`
+# Set the entrypoint as `route_task`
 # This means that this node is the first one called
-builder.add_edge(START, "generate_query")
+builder.add_edge(START, "route_task")
+# Route to query generation (for now, all tasks go to research)
+builder.add_edge("route_task", "generate_query")
 # Add conditional edge to continue with search queries in a parallel branch
 builder.add_conditional_edges(
     "generate_query", continue_to_web_research, ["web_research"]

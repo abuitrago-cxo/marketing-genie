@@ -1,11 +1,30 @@
 # mypy: disable - error - code = "no-untyped-def,misc"
 import pathlib
+import sys
+import os
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 import fastapi.exceptions
 
+# Add the src directory to the Python path
+current_dir = pathlib.Path(__file__).parent
+src_dir = current_dir.parent
+sys.path.insert(0, str(src_dir))
+
+# Import our enhanced endpoints
+try:
+    from api.enhanced_endpoints import enhanced_router
+    ENHANCED_ENDPOINTS_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Enhanced endpoints not available: {e}")
+    ENHANCED_ENDPOINTS_AVAILABLE = False
+
 # Define the FastAPI app
-app = FastAPI()
+app = FastAPI(title="AI Agent Assistant API", version="1.0.0")
+
+# Include enhanced endpoints if available
+if ENHANCED_ENDPOINTS_AVAILABLE:
+    app.include_router(enhanced_router)
 
 
 def create_frontend_router(build_dir="../frontend/dist"):

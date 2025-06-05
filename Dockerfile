@@ -19,13 +19,18 @@ RUN npm run build
 # Stage 2: Python Backend
 FROM docker.io/langchain/langgraph-api:3.11
 
-# -- Install UV --
-# First install curl, then install UV using the standalone installer
-RUN apt-get update && apt-get install -y curl && \
-    curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+# -- Install UV and additional tools --
+# Install curl, health check tools, and UV
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    netcat-openbsd \
+    postgresql-client \
+    redis-tools \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 ENV PATH="/root/.local/bin:$PATH"
-# -- End of UV installation --
+# -- End of UV and tools installation --
 
 # -- Copy built frontend from builder stage --
 # The app.py expects the frontend build to be at ../frontend/dist relative to its own location.
@@ -40,6 +45,16 @@ ADD backend/ /deps/backend
 # -- Installing all local dependencies using UV --
 # First, we need to ensure pip is available for UV to use
 RUN uv pip install --system pip setuptools wheel
+
+# Install additional dependencies for enhanced features
+RUN uv pip install --system \
+    langchain-anthropic \
+    langchain-openai \
+    fastapi[all] \
+    uvicorn[standard] \
+    redis \
+    psycopg2-binary
+
 # Install dependencies with UV, respecting constraints
 RUN cd /deps/backend && \
     PYTHONDONTWRITEBYTECODE=1 UV_SYSTEM_PYTHON=1 uv pip install --system -c /api/constraints.txt -e .
@@ -60,4 +75,23 @@ RUN uv pip uninstall --system pip setuptools wheel && \
     find /usr/local/bin -name "pip*" -delete
 # -- End of pip removal --
 
+# -- Add health check and startup scripts --
+COPY backend/scripts/ /scripts/
+RUN chmod +x /scripts/*.sh
+
+# -- Set environment variables for enhanced features --
+ENV ENABLE_ENHANCED_UI=true
+ENV ENABLE_MULTI_LLM=true
+ENV ENABLE_AGENT_ROUTING=true
+ENV LOG_LEVEL=INFO
+
+# -- Health check --
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/enhanced/health || exit 1
+
 WORKDIR /deps/backend
+
+# -- Startup script --
+COPY backend/scripts/startup.sh /startup.sh
+RUN chmod +x /startup.sh
+CMD ["/startup.sh"]
