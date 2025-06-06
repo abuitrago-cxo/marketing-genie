@@ -92,7 +92,17 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
         state["initial_search_query_count"] = configurable.number_of_initial_queries
 
     # Get model type and model name from state or config
-    model_type = state.get("model_type") or configurable.model_type
+    # Retrieve model_type from state, or from the configurable object.
+    # Use getattr with a fallback to 'gemini' to prevent AttributeError
+    # if configurable.model_type is unexpectedly missing, ensuring Pydantic's
+    # intended default ('gemini') is applied.
+    model_type_from_state = state.get("model_type")
+    if model_type_from_state:
+        model_type = model_type_from_state
+    else:
+        # Default to 'gemini' if 'model_type' attribute is missing on configurable,
+        # which would indicate Pydantic's default didn't apply as expected.
+        model_type = getattr(configurable, 'model_type', 'gemini')
     model_name = state.get("query_generator_model") or configurable.query_generator_model
 
     # Initialize the appropriate LLM based on model_type
