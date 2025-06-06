@@ -21,6 +21,7 @@ import { useEffect, useState } from "react";
 export interface ProcessedEvent {
   title: string;
   data: any;
+  dataType?: string;
 }
 
 interface ActivityTimelineProps {
@@ -107,11 +108,17 @@ export function ActivityTimeline({
                         {eventItem.title}
                       </p>
                       <p className="text-xs text-neutral-300 leading-relaxed">
-                        {typeof eventItem.data === "string"
-                          ? eventItem.data
-                          : Array.isArray(eventItem.data)
-                          ? (eventItem.data as string[]).join(", ")
-                          : JSON.stringify(eventItem.data)}
+                        {eventItem.dataType === 'query_list' && Array.isArray(eventItem.data) ? (
+                          <ul className="list-disc pl-5">
+                            {(eventItem.data as string[]).map((query, i) => (
+                              <li key={i} className="text-xs text-neutral-300 leading-relaxed">{query}</li>
+                            ))}
+                          </ul>
+                        ) : typeof eventItem.data === 'string' ? (
+                          eventItem.data
+                        ) : (
+                          JSON.stringify(eventItem.data)
+                        )}
                       </p>
                     </div>
                   </div>
