@@ -251,6 +251,41 @@ export function ChatMessagesView({
     }
   };
 
+  const handleExportChat = () => {
+    const formattedMessages = messages
+      .map((message) => {
+        const prefix = message.type === "human" ? "User: " : "Agent: ";
+        let content = "";
+        if (typeof message.content === "string") {
+          content = message.content;
+        } else if (Array.isArray(message.content)) {
+          // Attempt to join array content; might need more specific handling
+          // based on actual content structure (e.g. if it's rich content blocks)
+          content = message.content
+            .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+            .join("\n");
+        } else {
+          content = JSON.stringify(message.content);
+        }
+        // Note: Citations are assumed to be part of the message.content string for AI messages.
+        // If citations are stored separately (e.g. in message.additional_kwargs or via historicalActivities),
+        // this part would need to be adjusted to fetch and format them.
+        return prefix + content;
+      })
+      .join("\n\n");
+
+    const blob = new Blob([formattedMessages], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "chat_export.txt";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    console.log("Exporting chat:", formattedMessages);
+  };
+
   return (
     <div className="flex flex-col h-full">
       <ScrollArea className="flex-grow" ref={scrollAreaRef}>
@@ -316,6 +351,15 @@ export function ChatMessagesView({
         onCancel={onCancel}
         hasHistory={messages.length > 0}
       />
+      <div className="p-4 md:p-6 border-t">
+        <Button
+          variant="outline"
+          onClick={handleExportChat}
+          className="w-full"
+        >
+          Export Chat
+        </Button>
+      </div>
     </div>
   );
 }
