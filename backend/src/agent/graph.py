@@ -7,6 +7,7 @@ from langgraph.types import Send
 from langgraph.graph import StateGraph
 from langgraph.graph import START, END
 from langchain_core.runnables import RunnableConfig
+from langchain_core.language_models.chat_models import BaseChatModel
 from google.genai import Client
 
 from agent.state import (
@@ -24,6 +25,8 @@ from agent.prompts import (
     answer_instructions,
 )
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_community.llms import Ollama
+from langchain_community.chat_models import ChatOllama
 from agent.utils import (
     get_citations,
     get_research_topic,
@@ -39,12 +42,40 @@ if os.getenv("GEMINI_API_KEY") is None:
 # Used for Google Search API
 genai_client = Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+def get_llm(model_name: str, model_type: str, base_url: str = "http://localhost:11434", temperature: float = 1.0) -> BaseChatModel:
+    """Get the appropriate LLM based on model type.
+    
+    Args:
+        model_name: The name of the model to use
+        model_type: The type of model (gemini or ollama)
+        base_url: The base URL for Ollama API (only used for ollama models)
+        temperature: The temperature to use for generation
+        
+    Returns:
+        A BaseChatModel instance
+    """
+    if model_type == "gemini":
+        return ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=temperature,
+            max_retries=2,
+            api_key=os.getenv("GEMINI_API_KEY"),
+        )
+    elif model_type == "ollama":
+        return ChatOllama(
+            model=model_name,
+            base_url=base_url,
+            temperature=temperature,
+        )
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+
 
 # Nodes
 def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerationState:
     """LangGraph node that generates a search queries based on the User's question.
 
-    Uses Gemini 2.0 Flash to create an optimized search query for web research based on
+    Uses the configured model to create an optimized search query for web research based on
     the User's question.
 
     Args:
@@ -60,12 +91,16 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     if state.get("initial_search_query_count") is None:
         state["initial_search_query_count"] = configurable.number_of_initial_queries
 
-    # init Gemini 2.0 Flash
-    llm = ChatGoogleGenerativeAI(
-        model=configurable.query_generator_model,
-        temperature=1.0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
+    # Get model type and model name from state or config
+    model_type = state.get("model_type") or configurable.model_type
+    model_name = state.get("query_generator_model") or configurable.query_generator_model
+
+    # Initialize the appropriate LLM based on model_type
+    llm = get_llm(
+        model_name=model_name,
+        model_type=model_type,
+        base_url=configurable.ollama_base_url,
+        temperature=1.0
     )
     structured_llm = llm.with_structured_output(SearchQueryList)
 
@@ -95,7 +130,8 @@ def continue_to_web_research(state: QueryGenerationState):
 def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
     """LangGraph node that performs web research using the native Google Search API tool.
 
-    Executes a web search using the native Google Search API tool in combination with Gemini 2.0 Flash.
+    Executes a web search using the native Google Search API tool. This part currently
+    always uses Gemini models as they have better integration with Google Search.
 
     Args:
         state: Current graph state containing the search query and research loop count
@@ -106,14 +142,23 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
     """
     # Configure
     configurable = Configuration.from_runnable_config(config)
+    model_type = state.get("model_type") or configurable.model_type
+    
     formatted_prompt = web_searcher_instructions.format(
         current_date=get_current_date(),
         research_topic=state["search_query"],
     )
 
+    # Web search currently only works with Gemini models since they have better
+    # integration with Google Search API
+    query_model = configurable.query_generator_model
+    if model_type != "gemini":
+        # If using Ollama, still use Gemini for web search
+        query_model = "gemini-2.0-flash"
+        
     # Uses the google genai client as the langchain client doesn't return grounding metadata
     response = genai_client.models.generate_content(
-        model=configurable.query_generator_model,
+        model=query_model,
         contents=formatted_prompt,
         config={
             "tools": [{"google_search": {}}],
@@ -153,7 +198,8 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
     configurable = Configuration.from_runnable_config(config)
     # Increment the research loop count and get the reasoning model
     state["research_loop_count"] = state.get("research_loop_count", 0) + 1
-    reasoning_model = state.get("reasoning_model") or configurable.reasoning_model
+    reasoning_model = state.get("reasoning_model") or configurable.reflection_model
+    model_type = state.get("model_type") or configurable.model_type
 
     # Format the prompt
     current_date = get_current_date()
@@ -162,12 +208,13 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
         research_topic=get_research_topic(state["messages"]),
         summaries="\n\n---\n\n".join(state["web_research_result"]),
     )
-    # init Reasoning Model
-    llm = ChatGoogleGenerativeAI(
-        model=reasoning_model,
-        temperature=1.0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
+    
+    # Initialize the appropriate LLM based on model_type
+    llm = get_llm(
+        model_name=reasoning_model,
+        model_type=model_type,
+        base_url=configurable.ollama_base_url,
+        temperature=1.0
     )
     result = llm.with_structured_output(Reflection).invoke(formatted_prompt)
 
@@ -231,7 +278,8 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
         Dictionary with state update, including running_summary key containing the formatted final summary with sources
     """
     configurable = Configuration.from_runnable_config(config)
-    reasoning_model = state.get("reasoning_model") or configurable.reasoning_model
+    reasoning_model = state.get("reasoning_model") or configurable.answer_model
+    model_type = state.get("model_type") or configurable.model_type
 
     # Format the prompt
     current_date = get_current_date()
@@ -241,12 +289,12 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
         summaries="\n---\n\n".join(state["web_research_result"]),
     )
 
-    # init Reasoning Model, default to Gemini 2.5 Flash
-    llm = ChatGoogleGenerativeAI(
-        model=reasoning_model,
-        temperature=0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
+    # Initialize the appropriate LLM based on model_type
+    llm = get_llm(
+        model_name=reasoning_model,
+        model_type=model_type,
+        base_url=configurable.ollama_base_url,
+        temperature=0
     )
     result = llm.invoke(formatted_prompt)
 

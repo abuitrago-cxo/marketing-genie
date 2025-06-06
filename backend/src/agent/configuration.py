@@ -1,12 +1,19 @@
 import os
 from pydantic import BaseModel, Field
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
 from langchain_core.runnables import RunnableConfig
 
 
 class Configuration(BaseModel):
     """The configuration for the agent."""
+
+    model_type: Literal["gemini", "ollama"] = Field(
+        default="gemini",
+        metadata={
+            "description": "The type of language model to use (gemini or ollama)."
+        },
+    )
 
     query_generator_model: str = Field(
         default="gemini-2.0-flash",
@@ -26,6 +33,13 @@ class Configuration(BaseModel):
         default="gemini-2.5-pro-preview-05-06",
         metadata={
             "description": "The name of the language model to use for the agent's answer."
+        },
+    )
+
+    ollama_base_url: str = Field(
+        default="http://localhost:11434",
+        metadata={
+            "description": "The base URL for the Ollama API."
         },
     )
 

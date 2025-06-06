@@ -20,6 +20,7 @@ export default function App() {
     initial_search_query_count: number;
     max_research_loops: number;
     reasoning_model: string;
+    model_type: string;
   }>({
     apiUrl: import.meta.env.DEV
       ? "http://localhost:2024"
@@ -128,6 +129,19 @@ export default function App() {
           max_research_loops = 10;
           break;
       }
+      
+      // Parse model string to get model_type and reasoning_model
+      // Format is "model-type:type:name"
+      let model_type = "gemini";
+      let reasoning_model = model;
+      
+      if (model.startsWith("model-type:")) {
+        const parts = model.split(":");
+        if (parts.length >= 3) {
+          model_type = parts[1];
+          reasoning_model = parts[2];
+        }
+      }
 
       const newMessages: Message[] = [
         ...(thread.messages || []),
@@ -141,7 +155,8 @@ export default function App() {
         messages: newMessages,
         initial_search_query_count: initial_search_query_count,
         max_research_loops: max_research_loops,
-        reasoning_model: model,
+        reasoning_model: reasoning_model,
+        model_type: model_type,
       });
     },
     [thread]
