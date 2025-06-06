@@ -10,23 +10,17 @@ class Configuration(BaseModel):
 
     query_generator_model: str = Field(
         default="anthropic.claude-3-sonnet-20240229-v1:0",
-        metadata={
-            "description": "AWS Bedrock model for query generation."
-        },
+        metadata={"description": "AWS Bedrock model for query generation."},
     )
 
     reflection_model: str = Field(
-        default="anthropic.claude-3-sonnet-20240229-v1:0",
-        metadata={
-            "description": "AWS Bedrock model for reflection."
-        },
+        default="us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+        metadata={"description": "AWS Bedrock model for reflection."},
     )
 
     answer_model: str = Field(
-        default="anthropic.claude-3-haiku-20240307-v1:0",
-        metadata={
-            "description": "AWS Bedrock model for answer generation."
-        },
+        default="us.anthropic.claude-3-5-haiku-20241022-v1:0",
+        metadata={"description": "AWS Bedrock model for answer generation."},
     )
 
     number_of_initial_queries: int = Field(
