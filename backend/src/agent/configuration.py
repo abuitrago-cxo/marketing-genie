@@ -9,23 +9,23 @@ class Configuration(BaseModel):
     """The configuration for the agent."""
 
     query_generator_model: str = Field(
-        default="gemini-2.0-flash",
+        default="anthropic.claude-3-sonnet-20240229-v1:0",
         metadata={
-            "description": "The name of the language model to use for the agent's query generation."
+            "description": "AWS Bedrock model for query generation."
         },
     )
 
     reflection_model: str = Field(
-        default="gemini-2.5-flash-preview-04-17",
+        default="anthropic.claude-3-sonnet-20240229-v1:0",
         metadata={
-            "description": "The name of the language model to use for the agent's reflection."
+            "description": "AWS Bedrock model for reflection."
         },
     )
 
     answer_model: str = Field(
-        default="gemini-2.5-pro-preview-05-06",
+        default="anthropic.claude-3-haiku-20240307-v1:0",
         metadata={
-            "description": "The name of the language model to use for the agent's answer."
+            "description": "AWS Bedrock model for answer generation."
         },
     )
 
