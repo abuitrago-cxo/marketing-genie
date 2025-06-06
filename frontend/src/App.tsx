@@ -4,8 +4,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { ProcessedEvent } from "@/components/ActivityTimeline";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { ChatMessagesView } from "@/components/ChatMessagesView";
+import { LiveActivityPanel } from "@/components/LiveActivityPanel"; // Import LiveActivityPanel
 
 export default function App() {
+  const [currentMessages, setCurrentMessages] = useState<Message[]>([]); // New state for messages
   const [processedEventsTimeline, setProcessedEventsTimeline] = useState<
     ProcessedEvent[]
   >([]);
@@ -34,7 +36,8 @@ export default function App() {
       if (event.generate_query) {
         processedEvent = {
           title: "Generating Search Queries",
-          data: event.generate_query.query_list.join(", "),
+          data: event.generate_query.query_list,
+          dataType: 'query_list',
         };
       } else if (event.web_research) {
         const sources = event.web_research.sources_gathered || [];
@@ -83,15 +86,15 @@ export default function App() {
         scrollViewport.scrollTop = scrollViewport.scrollHeight;
       }
     }
-  }, [thread.messages]);
+  }, [currentMessages]); // Changed from thread.messages
 
   useEffect(() => {
     if (
       hasFinalizeEventOccurredRef.current &&
       !thread.isLoading &&
-      thread.messages.length > 0
+      currentMessages.length > 0 // Changed from thread.messages
     ) {
-      const lastMessage = thread.messages[thread.messages.length - 1];
+      const lastMessage = currentMessages[currentMessages.length - 1]; // Changed from thread.messages
       if (lastMessage && lastMessage.type === "ai" && lastMessage.id) {
         setHistoricalActivities((prev) => ({
           ...prev,
@@ -100,7 +103,7 @@ export default function App() {
       }
       hasFinalizeEventOccurredRef.current = false;
     }
-  }, [thread.messages, thread.isLoading, processedEventsTimeline]);
+  }, [currentMessages, thread.isLoading, processedEventsTimeline]); // Changed from thread.messages
 
   const handleSubmit = useCallback(
     (submittedInputValue: string, effort: string, model: string) => {
@@ -125,12 +128,16 @@ export default function App() {
           break;
         case "high":
           initial_search_query_count = 5;
+          max_research_loops = 5;
+          break;
+        case "very-high":
+          initial_search_query_count = 5;
           max_research_loops = 10;
           break;
       }
 
       const newMessages: Message[] = [
-        ...(thread.messages || []),
+        ...currentMessages,
         {
           type: "human",
           content: submittedInputValue,
@@ -138,13 +145,14 @@ export default function App() {
         },
       ];
       thread.submit({
-        messages: newMessages,
+        messages: newMessages, // Pass newMessages which includes current + new human message
         initial_search_query_count: initial_search_query_count,
         max_research_loops: max_research_loops,
         reasoning_model: model,
       });
+      setCurrentMessages(newMessages); // Update currentMessages state
     },
-    [thread]
+    [thread, currentMessages, setCurrentMessages] // Added currentMessages and setCurrentMessages
   );
 
   const handleCancel = useCallback(() => {
@@ -152,30 +160,54 @@ export default function App() {
     window.location.reload();
   }, [thread]);
 
+  const handleNewChat = useCallback(() => {
+    if (thread.isLoading) {
+      thread.stop();
+    }
+    setCurrentMessages([]);
+    setProcessedEventsTimeline([]);
+    setHistoricalActivities({});
+    hasFinalizeEventOccurredRef.current = false;
+    // NOTE: useStream's thread object doesn't have an explicit init or reset for messages sent via submit.
+    // Clearing currentMessages and other local state is the primary way to reset the UI.
+    // The next thread.submit will start with the new `currentMessages`.
+  }, [thread, setCurrentMessages, setProcessedEventsTimeline, setHistoricalActivities]);
+
+
   return (
     <div className="flex h-screen bg-neutral-800 text-neutral-100 font-sans antialiased">
       <main className="flex-1 flex flex-col overflow-hidden max-w-4xl mx-auto w-full">
         <div
           className={`flex-1 overflow-y-auto ${
-            thread.messages.length === 0 ? "flex" : ""
+            currentMessages.length === 0 ? "flex" : "" // Changed condition
           }`}
         >
-          {thread.messages.length === 0 ? (
+          {currentMessages.length === 0 ? ( // Changed condition
             <WelcomeScreen
               handleSubmit={handleSubmit}
               isLoading={thread.isLoading}
               onCancel={handleCancel}
+              // onNewChat={handleNewChat} // Optional: if WelcomeScreen needs a "New Chat" button
             />
           ) : (
-            <ChatMessagesView
-              messages={thread.messages}
-              isLoading={thread.isLoading}
-              scrollAreaRef={scrollAreaRef}
-              onSubmit={handleSubmit}
-              onCancel={handleCancel}
-              liveActivityEvents={processedEventsTimeline}
-              historicalActivities={historicalActivities}
-            />
+            <div className="flex flex-row flex-1 overflow-hidden">
+              <div className="w-2/3 overflow-y-auto"> {/* ChatMessagesView container */}
+                <ChatMessagesView
+                  messages={currentMessages} // Changed from thread.messages
+                  isLoading={thread.isLoading}
+                  scrollAreaRef={scrollAreaRef}
+                  onSubmit={handleSubmit}
+                  onCancel={handleCancel} // This is for cancelling active stream
+                  onNewChat={handleNewChat} // This is for starting a new chat
+                  liveActivityEvents={processedEventsTimeline}
+                  historicalActivities={historicalActivities}
+                />
+              </div>
+              <LiveActivityPanel
+                liveActivityEvents={processedEventsTimeline}
+                isProcessing={thread.isLoading}
+              />
+            </div>
           )}
         </div>
       </main>

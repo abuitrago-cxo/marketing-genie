@@ -16,6 +16,7 @@ interface InputFormProps {
   onCancel: () => void;
   isLoading: boolean;
   hasHistory: boolean;
+  onNewChat?: () => void; // Added onNewChat prop
 }
 
 export const InputForm: React.FC<InputFormProps> = ({
@@ -23,6 +24,7 @@ export const InputForm: React.FC<InputFormProps> = ({
   onCancel,
   isLoading,
   hasHistory,
+  onNewChat, // Destructure onNewChat
 }) => {
   const [internalInputValue, setInternalInputValue] = useState("");
   const [effort, setEffort] = useState("medium");
@@ -123,6 +125,12 @@ export const InputForm: React.FC<InputFormProps> = ({
                 >
                   High
                 </SelectItem>
+                <SelectItem
+                  value="very-high"
+                  className="hover:bg-neutral-600 focus:bg-neutral-600 cursor-pointer"
+                >
+                  Very High
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -164,14 +172,14 @@ export const InputForm: React.FC<InputFormProps> = ({
             </Select>
           </div>
         </div>
-        {hasHistory && (
+        {hasHistory && onNewChat && (
           <Button
             className="bg-neutral-700 border-neutral-600 text-neutral-300 cursor-pointer rounded-xl rounded-t-sm pl-2 "
             variant="default"
-            onClick={() => window.location.reload()}
+            onClick={onNewChat} // Changed from window.location.reload to onNewChat
           >
             <SquarePen size={16} />
-            New Search
+            New Chat
           </Button>
         )}
       </div>

@@ -162,9 +162,9 @@ const HumanMessageBubble: React.FC<HumanMessageBubbleProps> = ({
 interface AiMessageBubbleProps {
   message: Message;
   historicalActivity: ProcessedEvent[] | undefined;
-  liveActivity: ProcessedEvent[] | undefined;
-  isLastMessage: boolean;
-  isOverallLoading: boolean;
+  // liveActivity: ProcessedEvent[] | undefined; // Removed
+  isLastMessage: boolean; // Still needed to know if it's the last message for other reasons if any
+  isOverallLoading: boolean; // Still needed to know if it's the last message for other reasons if any
   mdComponents: typeof mdComponents;
   handleCopy: (text: string, messageId: string) => void;
   copiedMessageId: string | null;
@@ -174,17 +174,16 @@ interface AiMessageBubbleProps {
 const AiMessageBubble: React.FC<AiMessageBubbleProps> = ({
   message,
   historicalActivity,
-  liveActivity,
+  // liveActivity, // Removed
   isLastMessage,
   isOverallLoading,
   mdComponents,
   handleCopy,
   copiedMessageId,
 }) => {
-  // Determine which activity events to show and if it's for a live loading message
-  const activityForThisBubble =
-    isLastMessage && isOverallLoading ? liveActivity : historicalActivity;
-  const isLiveActivityForThisBubble = isLastMessage && isOverallLoading;
+  // Activity is now only historical for bubbles
+  const activityForThisBubble = historicalActivity;
+  const isLiveActivityForThisBubble = false; // No live activity in bubbles anymore
 
   return (
     <div className={`relative break-words flex flex-col`}>
@@ -192,7 +191,7 @@ const AiMessageBubble: React.FC<AiMessageBubbleProps> = ({
         <div className="mb-3 border-b border-neutral-700 pb-3 text-xs">
           <ActivityTimeline
             processedEvents={activityForThisBubble}
-            isLoading={isLiveActivityForThisBubble}
+            isLoading={isLiveActivityForThisBubble} // Should be false
           />
         </div>
       )}
@@ -225,7 +224,8 @@ interface ChatMessagesViewProps {
   isLoading: boolean;
   scrollAreaRef: React.RefObject<HTMLDivElement | null>;
   onSubmit: (inputValue: string, effort: string, model: string) => void;
-  onCancel: () => void;
+  onCancel: () => void; // For cancelling active stream
+  onNewChat?: () => void; // For starting a new chat
   liveActivityEvents: ProcessedEvent[];
   historicalActivities: Record<string, ProcessedEvent[]>;
 }
@@ -236,6 +236,7 @@ export function ChatMessagesView({
   scrollAreaRef,
   onSubmit,
   onCancel,
+  onNewChat, // Added prop
   liveActivityEvents,
   historicalActivities,
 }: ChatMessagesViewProps) {
@@ -273,9 +274,9 @@ export function ChatMessagesView({
                     <AiMessageBubble
                       message={message}
                       historicalActivity={historicalActivities[message.id!]}
-                      liveActivity={liveActivityEvents} // Pass global live events
+                      // liveActivity={liveActivityEvents} // Removed
                       isLastMessage={isLast}
-                      isOverallLoading={isLoading} // Pass global loading state
+                      isOverallLoading={isLoading}
                       mdComponents={mdComponents}
                       handleCopy={handleCopy}
                       copiedMessageId={copiedMessageId}
@@ -314,6 +315,7 @@ export function ChatMessagesView({
         onSubmit={onSubmit}
         isLoading={isLoading}
         onCancel={onCancel}
+        onNewChat={onNewChat} // Pass down onNewChat
         hasHistory={messages.length > 0}
       />
     </div>

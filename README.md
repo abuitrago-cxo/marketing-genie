@@ -8,10 +8,17 @@ This project demonstrates a fullstack application using a React frontend and a L
 
 - 💬 Fullstack application with a React frontend and LangGraph backend.
 - 🧠 Powered by a LangGraph agent for advanced research and conversational AI.
+- 🔧 **User-Configurable Agent:**
+    - Select the Gemini model for reasoning (e.g., Gemini 2.5 Pro, Gemini 2.5 Flash).
+    - Adjust research "Effort" levels (Low, Medium, High, Very High) to control depth.
 - 🔍 Dynamic search query generation using Google Gemini models.
 - 🌐 Integrated web research via Google Search API.
 - 🤔 Reflective reasoning to identify knowledge gaps and refine searches.
 - 📄 Generates answers with citations from gathered sources.
+- ✨ **Enhanced User Interface:**
+    - **Live Activity Panel:** See the agent's research steps (query generation, web searching, reflection) in real-time in a dedicated side panel.
+    - **Clearer Query Display:** Generated search queries are itemized for better readability in the activity timeline.
+    - **New Chat Functionality:** Easily start a new conversation without a full page reload.
 - 🔄 Hot-reloading for both frontend and backend development during development.
 
 ## Project Structure
@@ -102,6 +109,8 @@ Open your browser and navigate to `http://localhost:8123/app/` to see the applic
 - [Shadcn UI](https://ui.shadcn.com/) - For components.
 - [LangGraph](https://github.com/langchain-ai/langgraph) - For building the backend research agent.
 - [Google Gemini](https://ai.google.dev/models/gemini) - LLM for query generation, reflection, and answer synthesis.
+
+*Note: The application's UI has been updated. The screenshot `app.png` may not reflect the latest layout with the live activity panel.*
 
 ## License
 
