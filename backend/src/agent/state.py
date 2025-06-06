@@ -17,8 +17,8 @@ class OverallState(TypedDict):
     search_query: Annotated[list, operator.add]
     web_research_result: Annotated[list, operator.add]
     sources_gathered: Annotated[list, operator.add]
-    initial_search_query_count: int
-    max_research_loops: int
+    initial_search_query_count: NotRequired[int]
+    max_research_loops: NotRequired[int]
     research_loop_count: int
     reasoning_model: str
 
