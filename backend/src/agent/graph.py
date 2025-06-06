@@ -57,8 +57,11 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     configurable = Configuration.from_runnable_config(config)
 
     # check for custom initial search query count
-    if state.get("initial_search_query_count") is None:
-        state["initial_search_query_count"] = configurable.number_of_initial_queries
+    user_defined_query_count = state.get("initial_search_query_count")
+    if user_defined_query_count is not None and isinstance(user_defined_query_count, int) and user_defined_query_count > 0:
+        num_queries = user_defined_query_count
+    else:
+        num_queries = configurable.number_of_initial_queries
 
     # init Gemini 2.0 Flash
     llm = ChatGoogleGenerativeAI(
@@ -74,7 +77,7 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     formatted_prompt = query_writer_instructions.format(
         current_date=current_date,
         research_topic=get_research_topic(state["messages"]),
-        number_queries=state["initial_search_query_count"],
+        number_queries=num_queries,
     )
     # Generate the search queries
     result = structured_llm.invoke(formatted_prompt)
@@ -197,12 +200,14 @@ def evaluate_research(
         String literal indicating the next node to visit ("web_research" or "finalize_summary")
     """
     configurable = Configuration.from_runnable_config(config)
-    max_research_loops = (
-        state.get("max_research_loops")
-        if state.get("max_research_loops") is not None
-        else configurable.max_research_loops
-    )
-    if state["is_sufficient"] or state["research_loop_count"] >= max_research_loops:
+
+    user_max_loops = state.get("max_research_loops")
+    if user_max_loops is not None and isinstance(user_max_loops, int) and user_max_loops > 0:
+        current_max_research_loops = user_max_loops
+    else:
+        current_max_research_loops = configurable.max_research_loops
+
+    if state["is_sufficient"] or state["research_loop_count"] >= current_max_research_loops:
         return "finalize_answer"
     else:
         return [

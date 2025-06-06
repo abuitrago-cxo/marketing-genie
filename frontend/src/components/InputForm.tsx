@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { SquarePen, Brain, Send, StopCircle, Zap, Cpu } from "lucide-react";
+import { SquarePen, Brain, Send, StopCircle, Zap, Cpu, Search, Repeat } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -12,7 +13,13 @@ import {
 
 // Updated InputFormProps
 interface InputFormProps {
-  onSubmit: (inputValue: string, effort: string, model: string) => void;
+  onSubmit: (
+    inputValue: string,
+    effort: string,
+    model: string,
+    numSearchQueries?: string,
+    maxResearchLoops?: string
+  ) => void;
   onCancel: () => void;
   isLoading: boolean;
   hasHistory: boolean;
@@ -27,11 +34,19 @@ export const InputForm: React.FC<InputFormProps> = ({
   const [internalInputValue, setInternalInputValue] = useState("");
   const [effort, setEffort] = useState("medium");
   const [model, setModel] = useState("gemini-2.5-flash-preview-04-17");
+  const [numSearchQueries, setNumSearchQueries] = useState("3");
+  const [maxResearchLoops, setMaxResearchLoops] = useState("3");
 
   const handleInternalSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!internalInputValue.trim()) return;
-    onSubmit(internalInputValue, effort, model);
+    onSubmit(
+      internalInputValue,
+      effort,
+      model,
+      numSearchQueries,
+      maxResearchLoops
+    );
     setInternalInputValue("");
   };
 
@@ -125,6 +140,32 @@ export const InputForm: React.FC<InputFormProps> = ({
                 </SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="flex flex-row gap-2 bg-neutral-700 border-neutral-600 text-neutral-300 focus:ring-neutral-500 rounded-xl rounded-t-sm pl-2 max-w-[100%] sm:max-w-[90%]">
+            <div className="flex flex-row items-center text-sm">
+              <Search className="h-4 w-4 mr-2" />
+              Search Queries
+            </div>
+            <Input
+              type="number"
+              value={numSearchQueries}
+              onChange={(e) => setNumSearchQueries(e.target.value)}
+              placeholder="3"
+              className="w-[60px] bg-transparent border-none focus:outline-none focus:ring-0 outline-none focus-visible:ring-0 shadow-none text-neutral-100 placeholder-neutral-500"
+            />
+          </div>
+          <div className="flex flex-row gap-2 bg-neutral-700 border-neutral-600 text-neutral-300 focus:ring-neutral-500 rounded-xl rounded-t-sm pl-2 max-w-[100%] sm:max-w-[90%]">
+            <div className="flex flex-row items-center text-sm">
+              <Repeat className="h-4 w-4 mr-2" />
+              Research Loops
+            </div>
+            <Input
+              type="number"
+              value={maxResearchLoops}
+              onChange={(e) => setMaxResearchLoops(e.target.value)}
+              placeholder="3"
+              className="w-[60px] bg-transparent border-none focus:outline-none focus:ring-0 outline-none focus-visible:ring-0 shadow-none text-neutral-100 placeholder-neutral-500"
+            />
           </div>
           <div className="flex flex-row gap-2 bg-neutral-700 border-neutral-600 text-neutral-300 focus:ring-neutral-500 rounded-xl rounded-t-sm pl-2  max-w-[100%] sm:max-w-[90%]">
             <div className="flex flex-row items-center text-sm ml-2">

@@ -11,6 +11,7 @@ This project demonstrates a fullstack application using a React frontend and a L
 - 🔍 Dynamic search query generation using Google Gemini models.
 - 🌐 Integrated web research via Google Search API.
 - 🤔 Reflective reasoning to identify knowledge gaps and refine searches.
+- ⚙️ Customizable research depth: Allows users to specify the number of initial search queries and maximum research loops.
 - 📄 Generates answers with citations from gathered sources.
 - 🔄 Hot-reloading for both frontend and backend development during development.
 
