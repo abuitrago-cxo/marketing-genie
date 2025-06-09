@@ -9,21 +9,21 @@ class Configuration(BaseModel):
     """The configuration for the agent."""
 
     query_generator_model: str = Field(
-        default="gemini-2.0-flash",
+        default="gpt-3.5-turbo",
         metadata={
             "description": "The name of the language model to use for the agent's query generation."
         },
     )
 
     reflection_model: str = Field(
-        default="gemini-2.5-flash-preview-04-17",
+        default="gpt-3.5-turbo",
         metadata={
             "description": "The name of the language model to use for the agent's reflection."
         },
     )
 
     answer_model: str = Field(
-        default="gemini-2.5-pro-preview-05-06",
+        default="gpt-4-turbo",
         metadata={
             "description": "The name of the language model to use for the agent's answer."
         },
@@ -37,6 +37,11 @@ class Configuration(BaseModel):
     max_research_loops: int = Field(
         default=2,
         metadata={"description": "The maximum number of research loops to perform."},
+    )
+
+    openai_api_key: Optional[str] = Field(
+        default=None,
+        metadata={"description": "The OpenAI API key."},
     )
 
     @classmethod

@@ -7,7 +7,6 @@ from langgraph.types import Send
 from langgraph.graph import StateGraph
 from langgraph.graph import START, END
 from langchain_core.runnables import RunnableConfig
-from google.genai import Client
 
 from agent.state import (
     OverallState,
@@ -23,7 +22,8 @@ from agent.prompts import (
     reflection_instructions,
     answer_instructions,
 )
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+from langchain_community.tools.tavily_search import TavilySearchResults
 from agent.utils import (
     get_citations,
     get_research_topic,
@@ -33,11 +33,11 @@ from agent.utils import (
 
 load_dotenv()
 
-if os.getenv("GEMINI_API_KEY") is None:
-    raise ValueError("GEMINI_API_KEY is not set")
+if os.getenv("OPENAI_API_KEY") is None:
+    raise ValueError("OPENAI_API_KEY is not set")
 
-# Used for Google Search API
-genai_client = Client(api_key=os.getenv("GEMINI_API_KEY"))
+if os.getenv("TAVILY_API_KEY") is None:
+    raise ValueError("TAVILY_API_KEY is not set")
 
 
 # Nodes
@@ -60,12 +60,12 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     if state.get("initial_search_query_count") is None:
         state["initial_search_query_count"] = configurable.number_of_initial_queries
 
-    # init Gemini 2.0 Flash
-    llm = ChatGoogleGenerativeAI(
+    # init OpenAI
+    llm = ChatOpenAI(
         model=configurable.query_generator_model,
         temperature=1.0,
         max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
+        api_key=os.getenv("OPENAI_API_KEY"),
     )
     structured_llm = llm.with_structured_output(SearchQueryList)
 
@@ -105,34 +105,35 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
         Dictionary with state update, including sources_gathered, research_loop_count, and web_research_results
     """
     # Configure
-    configurable = Configuration.from_runnable_config(config)
-    formatted_prompt = web_searcher_instructions.format(
-        current_date=get_current_date(),
-        research_topic=state["search_query"],
-    )
+    # configurable = Configuration.from_runnable_config(config) # Not needed for query_generator_model here
 
-    # Uses the google genai client as the langchain client doesn't return grounding metadata
-    response = genai_client.models.generate_content(
-        model=configurable.query_generator_model,
-        contents=formatted_prompt,
-        config={
-            "tools": [{"google_search": {}}],
-            "temperature": 0,
-        },
-    )
-    # resolve the urls to short urls for saving tokens and time
-    resolved_urls = resolve_urls(
-        response.candidates[0].grounding_metadata.grounding_chunks, state["id"]
-    )
-    # Gets the citations and adds them to the generated text
-    citations = get_citations(response, resolved_urls)
-    modified_text = insert_citation_markers(response.text, citations)
-    sources_gathered = [item for citation in citations for item in citation["segments"]]
+    search_tool = TavilySearchResults(max_results=5) # Ensure TAVILY_API_KEY is in env
 
+    # Perform the search
+    search_query = state["search_query"]
+    raw_search_results = search_tool.invoke(search_query)
+
+    sources_gathered_for_this_search = []
+    content_snippets = []
+
+    if raw_search_results:
+        for result in raw_search_results:
+            if result.get("url") and result.get("content"): # Ensure basic fields are present
+                sources_gathered_for_this_search.append({
+                    "url": result["url"],
+                    "content": result["content"],
+                    "title": result.get("title", result["url"]) # Use title if available, else URL
+                })
+                content_snippets.append(result["content"])
+
+    combined_content = "\n\n---\n\n".join(content_snippets) if content_snippets else "No content found."
+
+    # Each call to web_research is for a single query.
+    # The results (sources and content) will be aggregated by LangGraph in the OverallState.
     return {
-        "sources_gathered": sources_gathered,
-        "search_query": [state["search_query"]],
-        "web_research_result": [modified_text],
+        "sources_gathered": sources_gathered_for_this_search,
+        "search_query": [search_query], # Keep track of the query for these results
+        "web_research_result": [combined_content], # Text content from this search
     }
 
 
@@ -163,11 +164,11 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
         summaries="\n\n---\n\n".join(state["web_research_result"]),
     )
     # init Reasoning Model
-    llm = ChatGoogleGenerativeAI(
+    llm = ChatOpenAI(
         model=reasoning_model,
         temperature=1.0,
         max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
+        api_key=os.getenv("OPENAI_API_KEY"),
     )
     result = llm.with_structured_output(Reflection).invoke(formatted_prompt)
 
@@ -241,27 +242,51 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
         summaries="\n---\n\n".join(state["web_research_result"]),
     )
 
-    # init Reasoning Model, default to Gemini 2.5 Flash
-    llm = ChatGoogleGenerativeAI(
+    # init Reasoning Model
+    llm = ChatOpenAI(
         model=reasoning_model,
         temperature=0,
         max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
+        api_key=os.getenv("OPENAI_API_KEY"),
     )
-    result = llm.invoke(formatted_prompt)
+    result = llm.invoke(formatted_prompt) # This is an AIMessage
 
-    # Replace the short urls with the original urls and add all used urls to the sources_gathered
-    unique_sources = []
-    for source in state["sources_gathered"]:
-        if source["short_url"] in result.content:
-            result.content = result.content.replace(
-                source["short_url"], source["value"]
-            )
-            unique_sources.append(source)
+    # Process sources_gathered
+    # It's a list of lists of dicts, e.g., [[{'url': ..., 'content': ..., 'title':...}, ...], ...]
+    # Flatten the list of lists into a single list of source dictionaries
+    all_sources_flat = []
+    if isinstance(state.get("sources_gathered"), list):
+        for source_list in state["sources_gathered"]:
+            if isinstance(source_list, list): # Ensure inner element is also a list
+                 all_sources_flat.extend(source_list)
+            elif isinstance(source_list, dict): # Handle cases where it might not be nested deeply
+                 all_sources_flat.append(source_list)
+
+
+    unique_sources_dict = {}
+    for source in all_sources_flat:
+        # Ensure source is a dictionary and has a 'url' key
+        if isinstance(source, dict) and source.get("url"):
+            if source["url"] not in unique_sources_dict:
+                unique_sources_dict[source["url"]] = source
+
+    unique_sources_list = list(unique_sources_dict.values())
+
+    # Format sources for display
+    formatted_sources_parts = []
+    if unique_sources_list:
+        formatted_sources_parts.append("\n\nSources:")
+        for i, source_item in enumerate(unique_sources_list):
+            title = source_item.get('title', source_item['url'])
+            formatted_sources_parts.append(f"{i+1}. [{title}]: {source_item['url']}")
+
+    final_sources_string = "\n".join(formatted_sources_parts)
+
+    final_answer_content = result.content + final_sources_string
 
     return {
-        "messages": [AIMessage(content=result.content)],
-        "sources_gathered": unique_sources,
+        "messages": [AIMessage(content=final_answer_content)],
+        "sources_gathered": unique_sources_list, # Store the unique, processed list
     }
 
 
