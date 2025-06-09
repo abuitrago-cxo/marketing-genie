@@ -36,30 +36,44 @@ Follow these steps to get the application running locally for development and te
 
 **2. Install Dependencies:**
 
-**Backend:**
+**For Linux/Mac:**
 
+**Backend:**
 ```bash
 cd backend
 pip install .
 ```
 
 **Frontend:**
-
 ```bash
 cd frontend
 npm install
 ```
 
+
 **3. Run Development Servers:**
 
-**Backend & Frontend:**
+**For Linux/Mac:**
 
 ```bash
 make dev
 ```
-This will run the backend and frontend development servers.    Open your browser and navigate to the frontend development server URL (e.g., `http://localhost:5173/app`).
+
+**For Windows:**
+
+```batch
+start-app.bat
+```
+
+This will run the backend and frontend development servers. Open your browser and navigate to the frontend development server URL (e.g., `http://localhost:5173/app`).
 
 _Alternatively, you can run the backend and frontend development servers separately. For the backend, open a terminal in the `backend/` directory and run `langgraph dev`. The backend API will be available at `http://127.0.0.1:2024`. It will also open a browser window to the LangGraph UI. For the frontend, open a terminal in the `frontend/` directory and run `npm run dev`. The frontend will be available at `http://localhost:5173`._
+
+**Windows Users:** If you don't have `make` installed, use the provided batch files:
+- `start-app.bat` - Automatically installs dependencies (if needed) and starts both servers
+
+
+**Note:** The `start-app.bat` will automatically install dependencies on first run and skip installation on subsequent runs if everything is already set up.
 
 ## How the Backend Agent Works (High-Level)
 
