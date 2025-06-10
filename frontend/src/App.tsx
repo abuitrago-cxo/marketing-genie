@@ -50,13 +50,21 @@ export default function App() {
           }.`,
         };
       } else if (event.reflection) {
+        const reflectionEvent = event.reflection;
+        let searchText = "nothing specific";
+        if (
+          reflectionEvent.follow_up_queries &&
+          Array.isArray(reflectionEvent.follow_up_queries) &&
+          reflectionEvent.follow_up_queries.length > 0
+        ) {
+          searchText = reflectionEvent.follow_up_queries.join(", ");
+        }
+
         processedEvent = {
           title: "Reflection",
-          data: event.reflection.is_sufficient
+          data: reflectionEvent.is_sufficient
             ? "Search successful, generating final answer."
-            : `Need more information, searching for ${event.reflection.follow_up_queries.join(
-                ", "
-              )}`,
+            : `Need more information, searching for ${searchText}`,
         };
       } else if (event.finalize_answer) {
         processedEvent = {
