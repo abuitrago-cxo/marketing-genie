@@ -267,24 +267,24 @@ def continue_to_database_query(state: QueryGenerationState):
 def database_query(state: DatabaseQueryState, config: RunnableConfig) -> OverallState:
     """
     LangGraph node that performs database queries using Vanna RAG + Doubao hybrid approach.
-    使用Vanna RAG + 豆包混合方案进行智能数据库查询
+    使用Vanna RAG + 豆包DoubaoAnna进行智能数据库查询
     """
     configurable = Configuration.from_runnable_config(config)
     
     search_query = state["search_query"]
     search_id = state["id"]
     
-    print(f"🗄️ [混合方案查询] 开始处理查询: {search_query} (ID: {search_id})")
+    print(f"🗄️ [DO'u'bao'Anna查询] 开始处理查询: {search_query} (ID: {search_id})")
     
     try:
         # 步骤1: 获取Vanna实例
         vn = get_vanna_instance()
         
-        # 步骤2: 使用混合方案生成查询结果（Vanna RAG + 豆包JSON）
-        print(f"🧠 [混合方案] 正在为查询生成SQL: {search_query}")
+        # 步骤2: 使用DoubaoAnna生成查询结果（Vanna RAG + 豆包JSON）
+        print(f"🧠 [DoubaoAnna] 正在为查询生成SQL: {search_query}")
         parsed_result = vn.generate_sql_with_rag_context(search_query)
         
-        print(f"✅ [混合方案] 查询计划生成成功，包含 {len(parsed_result.queries)} 个SQL查询")
+        print(f"✅ [DoubaoAnna] 查询计划生成成功，包含 {len(parsed_result.queries)} 个SQL查询")
         
         # 步骤3: 执行所有SQL查询并收集结果
         query_results = []
@@ -309,7 +309,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
                 
                 # 添加到sources中
                 sources_gathered.append({
-                    "label": f"混合方案查询{search_id}-{i+1}",
+                    "label": f"DoubaoAnna查询{search_id}-{i+1}",
                     "short_url": f"hybrid-query-{search_id}-{i+1}",
                     "value": f"Vanna RAG + 豆包查询结果 - {sql_query.explanation}"
                 })
@@ -327,7 +327,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
         
         # 步骤4: 构建综合结果报告
         comprehensive_result = f"""
-**Vanna RAG + 豆包混合方案查询报告 - 查询ID: {search_id}**
+**Vanna RAG + 豆包DoubaoAnna查询报告 - 查询ID: {search_id}**
 
 **原始需求:** {search_query}
 
@@ -336,7 +336,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
 {''.join(query_results)}
 
 **技术说明:** 
-本查询使用了混合方案：
+本查询使用了DoubaoAnna：
 1. 🔍 使用Vanna的RAG能力智能筛选相关的数据表结构和业务知识
 2. 🤖 使用豆包模型基于精准上下文生成JSON格式的查询计划
 3. ⚡ 执行所有SQL查询并提供详细的数据分析结果
@@ -344,7 +344,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
 这种方案结合了Vanna的智能上下文筛选和豆包的强大推理能力，为您的查询需求"{search_query}"提供了精确而全面的数据分析。
 """
         
-        print(f"🎉 [混合方案完成] 智能数据库查询成功完成，执行了 {len(parsed_result.queries)} 个查询")
+        print(f"🎉 [DoubaoAnna完成] 智能数据库查询成功完成，执行了 {len(parsed_result.queries)} 个查询")
         
         return {
             "sources_gathered": sources_gathered,
@@ -353,9 +353,9 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
         }
         
     except Exception as e:
-        print(f"❌ [混合方案错误] 混合方案查询失败: {e}")
+        print(f"❌ [DoubaoAnna错误] DoubaoAnna查询失败: {e}")
         
-        # 如果混合方案失败，回退到纯豆包方法
+        # 如果DoubaoAnna失败，回退到纯豆包方法
         print(f"🔄 [回退策略] 尝试使用纯豆包方法生成SQL...")
         
         try:
@@ -413,7 +413,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
                 {''.join(query_results)}
 
                 **说明:** 
-                由于混合方案遇到问题，本次使用纯豆包方法生成SQL查询。错误信息：{str(e)}
+                由于DoubaoAnna遇到问题，本次使用纯豆包方法生成SQL查询。错误信息：{str(e)}
                 """
             
             print(f"📊 [回退成功] 纯豆包方法查询完成，共执行了 {len(sql_result.queries)} 个查询")
@@ -433,7 +433,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
 
                 **原始需求:** {search_query}
 
-                **混合方案错误:** {str(e)}
+                **DoubaoAnna错误:** {str(e)}
 
                 **纯豆包方法错误:** {str(fallback_error)}
 
