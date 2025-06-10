@@ -3,7 +3,7 @@ volumes:
     driver: local
 services:
   langgraph-redis:
-    image: docker.io/redis:6
+    image: docker.io/redis:6.2.18-alpine
     healthcheck:
       test: redis-cli ping
       interval: 5s
