@@ -19,7 +19,6 @@ export default function App() {
     messages: Message[];
     initial_search_query_count: number;
     max_research_loops: number;
-    reasoning_model: string;
   }>({
     apiUrl: import.meta.env.DEV
       ? "http://localhost:2024"
@@ -42,16 +41,17 @@ export default function App() {
           title: "Generating Search Queries",
           data: queries.length > 0 ? queries.join(", ") : "No queries generated",
         };
-      } else if (event.web_research && event.web_research !== null) {
-        const sources = event.web_research.sources_gathered || [];
+      } else if (event.database_query && event.database_query !== null) {
+        console.log("🗄️ database_query event details:", event.database_query);
+        const sources = event.database_query.sources_gathered || [];
         const numSources = sources.length;
         const uniqueLabels = [
           ...new Set(sources.map((s: any) => s.label).filter(Boolean)),
         ];
         const exampleLabels = uniqueLabels.slice(0, 3).join(", ");
         processedEvent = {
-          title: "Web Research",
-          data: `Gathered ${numSources} sources. Related to: ${
+          title: "Database Query",
+          data: `Executed ${numSources} SQL queries. Results: ${
             exampleLabels || "N/A"
           }.`,
         };
@@ -113,7 +113,7 @@ export default function App() {
   }, [thread.messages, thread.isLoading, processedEventsTimeline]);
 
   const handleSubmit = useCallback(
-    (submittedInputValue: string, effort: string, model: string) => {
+    (submittedInputValue: string, effort: string) => {
       if (!submittedInputValue.trim()) return;
       setProcessedEventsTimeline([]);
       hasFinalizeEventOccurredRef.current = false;
@@ -151,7 +151,6 @@ export default function App() {
         messages: newMessages,
         initial_search_query_count: initial_search_query_count,
         max_research_loops: max_research_loops,
-        reasoning_model: model,
       });
     },
     [thread]

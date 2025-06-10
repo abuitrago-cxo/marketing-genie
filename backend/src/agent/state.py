@@ -20,7 +20,6 @@ class OverallState(TypedDict):
     initial_search_query_count: int
     max_research_loops: int
     research_loop_count: int
-    reasoning_model: str
 
 
 class ReflectionState(TypedDict):
@@ -40,8 +39,9 @@ class QueryGenerationState(TypedDict):
     query_list: list[Query]
 
 
-class WebSearchState(TypedDict):
-    search_query: str
+class DatabaseQueryState(TypedDict):
+    """数据库查询状态 - 重命名自WebSearchState以更好地反映实际用途"""
+    search_query: str  # 保持字段名一致性，实际为数据库查询需求
     id: str
 
 

@@ -54,6 +54,8 @@ Instructions:
 - If provided summaries are sufficient to answer the user's question, don't generate a follow-up query.
 - If there is a knowledge gap, generate a follow-up query that would help expand your understanding.
 - Focus on technical details, implementation specifics, or emerging trends that weren't fully covered.
+- The current date is {current_date}.
+
 
 Requirements:
 - Ensure the follow-up query is self-contained and includes necessary context for web search.
@@ -94,3 +96,39 @@ User Context:
 
 Summaries:
 {summaries}"""
+
+# 数据库查询相关的提示词
+database_query_instructions = """你是一个专业的数据库查询分析师。根据用户的查询需求，基于公司数据库schema生成相应的SQL查询语句。
+
+🏢 公司数据库Schema:
+{database_schema}
+
+Instructions:
+- 仔细分析用户的查询需求，理解他们想要获取什么信息
+- 根据数据库schema生成准确的SQL查询语句
+- 可能需要生成多个SQL查询来全面回答用户的问题
+- 每个SQL查询都应该有清晰的解释说明
+- 优先使用JOIN来关联相关表格获取完整信息
+- 注意使用适当的WHERE条件来筛选数据
+- 当前日期是 {current_date}
+
+输出格式:
+- 以JSON格式返回结果，包含以下字段:
+  - "queries": SQL查询列表，每个查询包含sql、explanation、result_description
+  - "summary": 对所有查询的总结说明
+
+示例:
+```json
+{{
+    "queries": [
+        {{
+            "sql": "SELECT e.name, e.salary, d.name as department FROM employees e JOIN departments d ON e.department_id = d.id WHERE e.salary > 20000",
+            "explanation": "查询薪资超过20000的员工信息，包括姓名、薪资和所属部门",
+            "result_description": "返回高薪员工的详细信息列表"
+        }}
+    ],
+    "summary": "根据薪资条件筛选员工信息，并关联部门表获取完整的员工档案"
+}}
+```
+
+用户查询需求: {query_requirement}"""

@@ -2,7 +2,9 @@ import os
 import json
 import re
 
-from agent.tools_and_schemas import SearchQueryList, Reflection
+from agent.tools_and_schemas import SearchQueryList, Reflection, DatabaseQueryResult
+from agent.database_schema import get_full_schema_for_ai
+from agent.database_tools import execute_database_query, format_query_result
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage
 from langgraph.types import Send
@@ -15,13 +17,13 @@ from agent.state import (
     OverallState,
     QueryGenerationState,
     ReflectionState,
-    WebSearchState,
+    DatabaseQueryState,
 )
 from agent.configuration import Configuration
 from agent.prompts import (
     get_current_date,
     query_writer_instructions,
-    web_searcher_instructions,
+    database_query_instructions,
     reflection_instructions,
     answer_instructions,
 )
@@ -72,8 +74,6 @@ def call_doubao_model(model_name: str, messages: list, temperature: float = 0.0,
         # 确保有思考过程输出
         original_content = formatted_messages[-1]["content"]
         formatted_messages[-1]["content"] = (
-            "任何输出都要有思考过程，输出内容必须以 \"<think>\\n\\n嗯\" 开头。"
-            "仔细揣摩用户意图，在思考过程之后，提供逻辑清晰且内容完整的回答。\\n\\n"
             f"{original_content}"
         )
     
@@ -240,61 +240,118 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     return return_value
 
 
-def continue_to_web_research(state: QueryGenerationState):
-    """LangGraph node that sends the search queries to the web research node.
+def continue_to_database_query(state: QueryGenerationState):
+    """LangGraph node that sends the search queries to the database query node.
 
-    This is used to spawn n number of web research nodes, one for each search query.
+    This is used to spawn n number of database query nodes, one for each search query.
     """
     return [
-        Send("web_research", {"search_query": search_query, "id": int(idx)})
+        Send("database_query", {"search_query": search_query, "id": int(idx)})
         for idx, search_query in enumerate(state["query_list"])
     ]
 
 
-def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
-    """LangGraph node that performs web research using Google Search API."""
+def database_query(state: DatabaseQueryState, config: RunnableConfig) -> OverallState:
+    """LangGraph node that performs database queries based on user requirements."""
     configurable = Configuration.from_runnable_config(config)
     
-    # 暂时返回固定的模拟搜索结果，确保代码能跑通
     search_query = state["search_query"]
     search_id = state["id"]
     
-    # 创建固定的模拟搜索结果
-    mock_search_result = f"""
-    关于 "{search_query}" 的搜索结果：
+    print(f"🗄️ [数据库查询] 开始处理查询: {search_query} (ID: {search_id})")
     
-    这是一个模拟的搜索结果。在实际应用中，这里应该调用真实的搜索API（如Google Search API）来获取最新的信息。
+    # 获取数据库schema描述
+    database_schema = get_full_schema_for_ai()
     
-    当前搜索查询: {search_query}
-    搜索ID: {search_id}
+    # 格式化数据库查询提示
+    current_date = get_current_date()
+    formatted_prompt = database_query_instructions.format(
+        database_schema=database_schema,
+        current_date=current_date,
+        query_requirement=search_query
+    )
     
-    主要发现:
-    1. 相关信息点1
-    2. 相关信息点2  
-    3. 相关信息点3
-    
-    这个结果包含了与查询相关的基础信息，可以用于后续的分析和总结。
-    """
-    
-    # 创建模拟的引用数据
-    citations = [{
-        "start_index": 0,
-        "end_index": len(mock_search_result),
-        "segments": [{
-            "label": f"搜索结果 {search_id}",
-            "short_url": f"https://example.com/search-{search_id}",
-            "value": f"https://example.com/full-search-result-{search_id}"
-        }]
-    }]
-    
-    modified_text = insert_citation_markers(mock_search_result, citations)
-    sources_gathered = [item for citation in citations for item in citation["segments"]]
+    # 使用快速模型生成SQL查询
+    try:
+        sql_result = call_doubao_model(
+            model_name=configurable.web_research_model,  # 使用快速模型
+            messages=formatted_prompt,
+            temperature=0.0,  # 使用较低的温度确保准确性
+            structured_output_schema=DatabaseQueryResult,
+            timeout=configurable.regular_model_timeout
+        )
+        
+        print(f"🔍 [SQL生成] 成功生成 {len(sql_result.queries)} 个SQL查询")
+        
+        # 执行每个SQL查询并收集结果
+        query_results = []
+        sources_gathered = []
+        
+        for i, sql_query in enumerate(sql_result.queries):
+            print(f"⚡ [执行SQL] 正在执行第 {i+1} 个查询...")
+            print(f"📝 [SQL语句] {sql_query.sql}")
+            
+            # 执行真实数据库查询
+            db_result = execute_database_query(sql_query.sql)
+            
+            # 格式化查询结果
+            formatted_result = format_query_result(sql_query.sql, db_result)
+            query_results.append(formatted_result)
+            
+            # 添加到sources中
+            sources_gathered.append({
+                "label": f"SQL查询{i+1}",
+                "short_url": f"sql-query-{search_id}-{i+1}",
+                "value": f"数据库查询结果 - {sql_query.explanation}"
+            })
+            
+            print(f"✅ [查询完成] 第 {i+1} 个查询执行完成")
+        
+        # 综合所有查询结果
+        comprehensive_result = f"""
+**数据库查询分析报告 - 查询ID: {search_id}**
 
-    return {
-        "sources_gathered": sources_gathered,
-        "search_query": [state["search_query"]],
-        "web_research_result": [modified_text],
-    }
+**原始需求:** {search_query}
+
+**查询概述:** {sql_result.summary}
+
+{''.join(query_results)}
+
+**总结:** 
+根据以上SQL查询结果，我们获取了关于 "{search_query}" 的详细数据信息。这些数据可以用于进一步的分析和决策支持。
+"""
+        
+        print(f"📊 [汇总完成] 数据库查询汇总完成，共执行了 {len(sql_result.queries)} 个查询")
+        
+        return {
+            "sources_gathered": sources_gathered,
+            "search_query": [state["search_query"]],
+            "web_research_result": [comprehensive_result],  # 保持字段名一致性
+        }
+        
+    except Exception as e:
+        print(f"❌ [查询错误] 数据库查询失败: {e}")
+        
+        # 返回错误信息
+        error_result = f"""
+**数据库查询错误 - 查询ID: {search_id}**
+
+**原始需求:** {search_query}
+
+**错误信息:** {str(e)}
+
+**建议:** 请检查查询语句的语法和数据库连接状态。
+"""
+        
+        return {
+            "sources_gathered": [{
+                "label": f"查询错误{search_id}",
+                "short_url": f"error-{search_id}",
+                "value": "数据库查询执行失败"
+            }],
+            "search_query": [state["search_query"]],
+            "web_research_result": [error_result],
+        }
 
 
 def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
@@ -370,7 +427,7 @@ def evaluate_research(
     else:
         return [
             Send(
-                "web_research",
+                "database_query",
                 {
                     "search_query": follow_up_query,
                     "id": state["number_of_ran_queries"] + int(idx),
@@ -439,7 +496,7 @@ builder = StateGraph(OverallState, config_schema=Configuration)
 
 # Define the nodes we will cycle between
 builder.add_node("generate_query", generate_query)
-builder.add_node("web_research", web_research)
+builder.add_node("database_query", database_query)
 builder.add_node("reflection", reflection)
 builder.add_node("finalize_answer", finalize_answer)
 
@@ -448,15 +505,15 @@ builder.add_node("finalize_answer", finalize_answer)
 builder.add_edge(START, "generate_query")
 # Add conditional edge to continue with search queries in a parallel branch
 builder.add_conditional_edges(
-    "generate_query", continue_to_web_research, ["web_research"]
+    "generate_query", continue_to_database_query, ["database_query"]
 )
-# Reflect on the web research
-builder.add_edge("web_research", "reflection")
+# Reflect on the database query
+builder.add_edge("database_query", "reflection")
 # Evaluate the research
 builder.add_conditional_edges(
-    "reflection", evaluate_research, ["web_research", "finalize_answer"]
+    "reflection", evaluate_research, ["database_query", "finalize_answer"]
 )
 # Finalize the answer
 builder.add_edge("finalize_answer", END)
 
-graph = builder.compile(name="pro-search-agent")
+graph = builder.compile(name="database-search-agent")
