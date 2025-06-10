@@ -26,7 +26,7 @@ class Configuration(BaseModel):
 
     # 答案生成模型 - 使用深度思考模型，注重最终质量
     answer_model: str = Field(
-        default="doubao-pro-256k-241115", #doubao-1.5-thinking-pro-250415
+        default="doubao-1.5-thinking-pro-250415",
         metadata={
             "description": "The name of the language model to use for the agent's answer."
         },

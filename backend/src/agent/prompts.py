@@ -1,100 +1,100 @@
 from datetime import datetime
 
 
-# Get current date in a readable format
+# 获取当前日期的可读格式
 def get_current_date():
     return datetime.now().strftime("%B %d, %Y")
 
 
-query_writer_instructions = """Your goal is to generate sophisticated and diverse web search queries. These queries are intended for an advanced automated web research tool capable of analyzing complex results, following links, and synthesizing information.
+query_writer_instructions = """你的目标是生成复杂多样的网络搜索查询。这些查询用于高级自动化网络研究工具，该工具能够分析复杂的结果、跟随链接并综合信息。
 
-Instructions:
-- Always prefer a single search query, only add another query if the original question requests multiple aspects or elements and one query is not enough.
-- Each query should focus on one specific aspect of the original question.
-- Don't produce more than {number_queries} queries.
-- Queries should be diverse, if the topic is broad, generate more than 1 query.
-- Don't generate multiple similar queries, 1 is enough.
-- Query should ensure that the most current information is gathered. The current date is {current_date}.
+指令：
+- 始终优先使用单个搜索查询，只有当原始问题要求多个方面或元素且一个查询不够时才添加另一个查询。
+- 每个查询应专注于原始问题的一个特定方面。
+- 不要产生超过 {number_queries} 个查询。
+- 查询应该是多样化的，如果主题很广泛，则生成多于1个查询。
+- 不要生成多个相似的查询，1个就足够了。
+- 查询应确保收集到最新的信息。当前日期是 {current_date}。
 
-Format: 
-- Format your response as a JSON object with ALL three of these exact keys:
-   - "rationale": Brief explanation of why these queries are relevant
-   - "query": A list of search queries
+格式：
+- 将你的回应格式化为JSON对象，包含以下三个确切的键：
+   - "rationale": 简要解释为什么这些查询是相关的
+   - "query": 搜索查询列表
 
-Example:
+示例：
 
-Topic: What revenue grew more last year apple stock or the number of people buying an iphone
+主题：去年苹果股票收入增长和购买iPhone的人数增长哪个更多
 ```json
 {{
-    "rationale": "To answer this comparative growth question accurately, we need specific data points on Apple's stock performance and iPhone sales metrics. These queries target the precise financial information needed: company revenue trends, product-specific unit sales figures, and stock price movement over the same fiscal period for direct comparison.",
-    "query": ["Apple total revenue growth fiscal year 2024", "iPhone unit sales growth fiscal year 2024", "Apple stock price growth fiscal year 2024"],
+    "rationale": "为了准确回答这个比较增长的问题，我们需要苹果股票表现和iPhone销售指标的具体数据点。这些查询针对所需的精确财务信息：公司收入趋势、特定产品单位销售数字，以及同一财政期间的股价变动，以便进行直接比较。",
+    "query": ["苹果2024财年总收入增长", "iPhone 2024财年单位销量增长", "苹果2024财年股价增长"],
 }}
 ```
 
-Context: {research_topic}"""
+上下文：{research_topic}"""
 
 
-web_searcher_instructions = """Conduct targeted Google Searches to gather the most recent, credible information on "{research_topic}" and synthesize it into a verifiable text artifact.
+web_searcher_instructions = """进行有针对性的Google搜索，收集关于"{research_topic}"的最新可信信息，并将其综合为可验证的文本制品。
 
-Instructions:
-- Query should ensure that the most current information is gathered. The current date is {current_date}.
-- Conduct multiple, diverse searches to gather comprehensive information.
-- Consolidate key findings while meticulously tracking the source(s) for each specific piece of information.
-- The output should be a well-written summary or report based on your search findings. 
-- Only include the information found in the search results, don't make up any information.
+指令：
+- 查询应确保收集到最新的信息。当前日期是 {current_date}。
+- 进行多次、多样化的搜索以收集全面的信息。
+- 整合关键发现，同时细致跟踪每个具体信息片段的来源。
+- 输出应该是基于你的搜索发现的精心编写的摘要或报告。
+- 只包含在搜索结果中找到的信息，不要编造任何信息。
 
-Research Topic:
+研究主题：
 {research_topic}
 """
 
-reflection_instructions = """You are an expert research assistant analyzing summaries about "{research_topic}".
+reflection_instructions = """你是一个专家研究助理，正在分析关于"{research_topic}"的摘要。
 
-Instructions:
-- Identify knowledge gaps or areas that need deeper exploration and generate a follow-up query. (1 or multiple).
-- If provided summaries are sufficient to answer the user's question, don't generate a follow-up query.
-- If there is a knowledge gap, generate a follow-up query that would help expand your understanding.
-- Focus on technical details, implementation specifics, or emerging trends that weren't fully covered.
-- The current date is {current_date}.
+指令：
+- 识别知识空白或需要深入探索的领域，并生成后续查询（1个或多个）。
+- 如果提供的摘要足以回答用户的问题，则不生成后续查询。
+- 如果存在知识空白，生成一个有助于扩展你理解的后续查询。
+- 专注于技术细节、实现细节或未充分涵盖的新兴趋势。
+- 当前日期是 {current_date}。
 
+要求：
+- 确保后续查询是自包含的，并包含网络搜索的必要上下文。
 
-Requirements:
-- Ensure the follow-up query is self-contained and includes necessary context for web search.
+输出格式：
+- 将你的回应格式化为JSON对象，包含以下确切的键：
+   - "is_sufficient": true或false
+   - "knowledge_gap": 描述缺失或需要澄清的信息
+   - "follow_up_queries": 写一个具体的问题来解决这个空白
 
-Output Format:
-- Format your response as a JSON object with these exact keys:
-   - "is_sufficient": true or false
-   - "knowledge_gap": Describe what information is missing or needs clarification
-   - "follow_up_queries": Write a specific question to address this gap
-
-Example:
+示例：
 ```json
 {{
-    "is_sufficient": true, // or false
-    "knowledge_gap": "The summary lacks information about performance metrics and benchmarks", // "" if is_sufficient is true
-    "follow_up_queries": ["What are typical performance benchmarks and metrics used to evaluate [specific technology]?"] // [] if is_sufficient is true
+    "is_sufficient": true, // 或false
+    "knowledge_gap": "摘要缺乏关于性能指标和基准的信息", // 如果is_sufficient为true则为""
+    "follow_up_queries": ["评估[特定技术]的典型性能基准和指标是什么？"] // 如果is_sufficient为true则为[]
 }}
 ```
 
-Reflect carefully on the Summaries to identify knowledge gaps and produce a follow-up query. Then, produce your output following this JSON format:
+仔细反思摘要以识别知识空白并产生后续查询。然后，按照此JSON格式产生你的输出：
 
-Summaries:
+摘要：
 {summaries}
 """
 
-answer_instructions = """Generate a high-quality answer to the user's question based on the provided summaries.
+answer_instructions = """基于提供的摘要为用户的问题生成高质量的答案。
 
-Instructions:
-- The current date is {current_date}.
-- You are the final step of a multi-step research process, don't mention that you are the final step. 
-- You have access to all the information gathered from the previous steps.
-- You have access to the user's question.
-- Generate a high-quality answer to the user's question based on the provided summaries and the user's question.
-- you MUST include all the citations from the summaries in the answer correctly.
+指令：
+- 当前日期是 {current_date}。
+- 你是多步骤研究过程的最后一步，不要提及你是最后一步。
+- 你可以访问从前面步骤收集的所有信息。
+- 你可以访问用户的问题。
+- 基于提供的摘要和用户的问题为用户的问题生成高质量的答案。
+- 你必须在答案中正确包含摘要中的所有引用。
+- 不要告诉用户你从哪个表和哪个字段得出的结论，用户并不关心，只关心结论。
 
-User Context:
+用户上下文：
 - {research_topic}
 
-Summaries:
+摘要：
 {summaries}"""
 
 # 数据库查询相关的提示词
@@ -103,7 +103,7 @@ database_query_instructions = """你是一个专业的数据库查询分析师�
 🏢 公司数据库Schema:
 {database_schema}
 
-Instructions:
+指令：
 - 仔细分析用户的查询需求，理解他们想要获取什么信息
 - 根据数据库schema生成准确的SQL查询语句
 - 可能需要生成多个SQL查询来全面回答用户的问题
@@ -112,12 +112,12 @@ Instructions:
 - 注意使用适当的WHERE条件来筛选数据
 - 当前日期是 {current_date}
 
-输出格式:
-- 以JSON格式返回结果，包含以下字段:
+输出格式：
+- 以JSON格式返回结果，包含以下字段：
   - "queries": SQL查询列表，每个查询包含sql、explanation、result_description
   - "summary": 对所有查询的总结说明
 
-示例:
+示例：
 ```json
 {{
     "queries": [
@@ -131,4 +131,4 @@ Instructions:
 }}
 ```
 
-用户查询需求: {query_requirement}"""
+用户查询需求：{query_requirement}"""
