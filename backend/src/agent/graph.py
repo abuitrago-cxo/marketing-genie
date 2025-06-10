@@ -266,60 +266,85 @@ def continue_to_database_query(state: QueryGenerationState):
 
 def database_query(state: DatabaseQueryState, config: RunnableConfig) -> OverallState:
     """
-    LangGraph node that performs database queries using Vanna for intelligent SQL generation.
-    使用Vanna进行智能SQL生成的数据库查询节点
+    LangGraph node that performs database queries using Vanna RAG + Doubao hybrid approach.
+    使用Vanna RAG + 豆包混合方案进行智能数据库查询
     """
     configurable = Configuration.from_runnable_config(config)
     
     search_query = state["search_query"]
     search_id = state["id"]
     
-    print(f"🗄️ [Vanna数据库查询] 开始处理查询: {search_query} (ID: {search_id})")
+    print(f"🗄️ [混合方案查询] 开始处理查询: {search_query} (ID: {search_id})")
     
     try:
         # 步骤1: 获取Vanna实例
         vn = get_vanna_instance()
         
-        # 步骤2: 使用Vanna生成SQL
-        print(f"🧠 [Vanna-SQL生成] 正在为查询生成SQL: {search_query}")
-        generated_sql = vn.generate_sql(search_query)
+        # 步骤2: 使用混合方案生成查询结果（Vanna RAG + 豆包JSON）
+        print(f"🧠 [混合方案] 正在为查询生成SQL: {search_query}")
+        parsed_result = vn.generate_sql_with_rag_context(search_query)
         
-        print(f"✅ [Vanna-SQL生成] SQL生成成功:")
-        print(f"   {generated_sql}")
+        print(f"✅ [混合方案] 查询计划生成成功，包含 {len(parsed_result.queries)} 个SQL查询")
         
-        # 步骤3: 执行SQL查询
-        print(f"⚡ [执行SQL] 正在执行Vanna生成的SQL...")
-        db_result = execute_database_query(generated_sql)
+        # 步骤3: 执行所有SQL查询并收集结果
+        query_results = []
+        sources_gathered = []
         
-        # 步骤4: 格式化查询结果
-        formatted_result = format_query_result(generated_sql, db_result)
+        for i, sql_query in enumerate(parsed_result.queries):
+            print(f"⚡ [执行SQL] 正在执行第 {i+1} 个查询: {sql_query.explanation}")
+            
+            try:
+                # 执行真实数据库查询
+                db_result = execute_database_query(sql_query.sql)
+                
+                # 格式化查询结果
+                formatted_result = format_query_result(sql_query.sql, db_result)
+                query_results.append(f"""
+**查询 {i+1}: {sql_query.explanation}**
+```sql
+{sql_query.sql}
+```
+{formatted_result}
+""")
+                
+                # 添加到sources中
+                sources_gathered.append({
+                    "label": f"混合方案查询{search_id}-{i+1}",
+                    "short_url": f"hybrid-query-{search_id}-{i+1}",
+                    "value": f"Vanna RAG + 豆包查询结果 - {sql_query.explanation}"
+                })
+                
+            except Exception as sql_error:
+                print(f"❌ [SQL执行] 第 {i+1} 个查询执行失败: {sql_error}")
+                error_result = f"""
+**查询 {i+1}: {sql_query.explanation}** ❌
+```sql
+{sql_query.sql}
+```
+执行失败: {str(sql_error)}
+"""
+                query_results.append(error_result)
         
-        # 步骤5: 创建数据源引用
-        sources_gathered = [{
-            "label": f"Vanna智能查询{search_id}",
-            "short_url": f"vanna-query-{search_id}",
-            "value": f"Vanna生成的SQL查询结果"
-        }]
-        
-        # 步骤6: 构建综合结果报告
+        # 步骤4: 构建综合结果报告
         comprehensive_result = f"""
-**Vanna智能数据库查询报告 - 查询ID: {search_id}**
+**Vanna RAG + 豆包混合方案查询报告 - 查询ID: {search_id}**
 
 **原始需求:** {search_query}
 
-**Vanna生成的SQL:**
-```sql
-{generated_sql}
-```
+**查询概述:** {parsed_result.summary}
 
-**查询结果:**
-{formatted_result}
+{''.join(query_results)}
 
-**分析说明:** 
-本查询使用Vanna AI自动生成SQL语句，基于对数据库结构和业务逻辑的深度理解，为您的查询需求"{search_query}"提供了精确的数据分析结果。
+**技术说明:** 
+本查询使用了混合方案：
+1. 🔍 使用Vanna的RAG能力智能筛选相关的数据表结构和业务知识
+2. 🤖 使用豆包模型基于精准上下文生成JSON格式的查询计划
+3. ⚡ 执行所有SQL查询并提供详细的数据分析结果
+
+这种方案结合了Vanna的智能上下文筛选和豆包的强大推理能力，为您的查询需求"{search_query}"提供了精确而全面的数据分析。
 """
         
-        print(f"🎉 [Vanna查询完成] 智能数据库查询成功完成")
+        print(f"🎉 [混合方案完成] 智能数据库查询成功完成，执行了 {len(parsed_result.queries)} 个查询")
         
         return {
             "sources_gathered": sources_gathered,
@@ -328,10 +353,10 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
         }
         
     except Exception as e:
-        print(f"❌ [Vanna查询错误] 智能查询失败: {e}")
+        print(f"❌ [混合方案错误] 混合方案查询失败: {e}")
         
-        # 如果Vanna失败，回退到原始方法
-        print(f"🔄 [回退策略] 尝试使用豆包方法生成SQL...")
+        # 如果混合方案失败，回退到纯豆包方法
+        print(f"🔄 [回退策略] 尝试使用纯豆包方法生成SQL...")
         
         try:
             # 获取数据库schema描述
@@ -345,7 +370,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
                 query_requirement=search_query
             )
             
-            # 使用快速模型生成SQL查询
+            # 使用豆包模型生成SQL查询
             sql_result = call_doubao_model(
                 model_name=configurable.web_research_model,
                 messages=formatted_prompt,
@@ -372,14 +397,14 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
                 
                 # 添加到sources中
                 sources_gathered.append({
-                    "label": f"豆包SQL查询{i+1}",
-                    "short_url": f"fallback-sql-query-{search_id}-{i+1}",
-                    "value": f"豆包SQL查询结果 - {sql_query.explanation}"
+                    "label": f"纯豆包查询{i+1}",
+                    "short_url": f"fallback-query-{search_id}-{i+1}",
+                    "value": f"纯豆包查询结果 - {sql_query.explanation}"
                 })
             
             # 综合所有查询结果
             comprehensive_result = f"""
-                **数据库查询分析报告 - 查询ID: {search_id}** (豆包方法)
+                **数据库查询分析报告 - 查询ID: {search_id}** (纯豆包方法)
 
                 **原始需求:** {search_query}
 
@@ -388,10 +413,10 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
                 {''.join(query_results)}
 
                 **说明:** 
-                由于Vanna智能查询遇到问题，本次使用豆包方法生成SQL查询。错误信息：{str(e)}
+                由于混合方案遇到问题，本次使用纯豆包方法生成SQL查询。错误信息：{str(e)}
                 """
             
-            print(f"📊 [回退成功] 豆包方法查询完成，共执行了 {len(sql_result.queries)} 个查询")
+            print(f"📊 [回退成功] 纯豆包方法查询完成，共执行了 {len(sql_result.queries)} 个查询")
 
             return {
                 "sources_gathered": sources_gathered,
@@ -400,7 +425,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
             }
             
         except Exception as fallback_error:
-            print(f"❌ [回退失败] 豆包方法也失败了: {fallback_error}")
+            print(f"❌ [回退失败] 纯豆包方法也失败了: {fallback_error}")
             
             # 返回错误信息
             error_result = f"""
@@ -408,9 +433,9 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
 
                 **原始需求:** {search_query}
 
-                **Vanna错误:** {str(e)}
+                **混合方案错误:** {str(e)}
 
-                **豆包方法错误:** {str(fallback_error)}
+                **纯豆包方法错误:** {str(fallback_error)}
 
                 **建议:** 请检查查询语句的语法、数据库连接状态和Vanna配置。
                 """
@@ -423,7 +448,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
                 }],
                 "search_query": [state["search_query"]],
                 "web_research_result": [error_result],
-    }
+        }
 
 
 def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:

@@ -191,15 +191,17 @@ def init_mysql_database():
         
         print("✅ MySQL表结构创建完成")
         
-        # 检查是否已有数据
+        # 检查是否已有完整数据（以员工表为准，因为它是核心数据）
+        cursor.execute("SELECT COUNT(*) FROM employees")
+        emp_count = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM departments")
         dept_count = cursor.fetchone()[0]
         
-        if dept_count == 0:
+        if emp_count == 0:
             print("📊 开始生成示例数据...")
             insert_sample_data(cursor)
         else:
-            print(f"📊 数据库已包含 {dept_count} 个部门的数据")
+            print(f"📊 数据库已包含完整数据: {dept_count} 个部门, {emp_count} 个员工")
         
         conn.commit()
         
@@ -258,7 +260,7 @@ def insert_sample_data(cursor):
             salary = random.randint(15000, 80000)
             manager_id = None  # 暂时不设置经理
             status = random.choices(['active', 'inactive'], weights=[95, 5])[0]
-            phone = fake.phone_number()
+            phone = fake.phone_number()[:15]  # 限制电话号码长度
             address = fake.address()
             birth_date = fake.date_of_birth(minimum_age=22, maximum_age=50)
             
@@ -327,6 +329,11 @@ def insert_sample_data(cursor):
     # 随机为部分员工分配设备
     cursor.execute("SELECT id FROM employees WHERE status = 'active' LIMIT 50")
     active_employees = [row[0] for row in cursor.fetchall()]
+    
+    # 如果没有活跃员工，跳过设备分配
+    if not active_employees:
+        print("⚠️ 没有活跃员工，跳过设备分配")
+        return
     
     for i in range(80):
         eq_type = random.choice(equipment_types)
