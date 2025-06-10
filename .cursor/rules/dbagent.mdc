@@ -1,0 +1,2031 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+让我查看当前的 `web_research` 实现，然后为您设计一个完整的数据库查询解决方案。我来为您设计一个完整的数据库查询解决方案，替换当前的 web_research 伪实现。
+
+## 1. 数据库表结构定义文件
+# 字节跳动人员主数据库表结构定义
+# 文件位置：backend/src/agent/db/schemas/hr_database_schemas.yaml
+
+database_name: "bytedance_hr"
+description: "字节跳动人员主数据库，包含员工基础信息、考勤、薪资、组织架构等数据"
+
+tables:
+  # 员工基础信息表
+  employees:
+    description: "员工基础信息表，包含个人基本信息和工作状态"
+    columns:
+      employee_id:
+        type: "VARCHAR(20)"
+        description: "员工工号，主键"
+        primary_key: true
+      employee_name:
+        type: "VARCHAR(100)"
+        description: "员工姓名"
+      email:
+        type: "VARCHAR(200)"
+        description: "员工邮箱"
+      phone:
+        type: "VARCHAR(20)"
+        description: "手机号码"
+      hire_date:
+        type: "DATE"
+        description: "入职日期"
+      departure_date:
+        type: "DATE"
+        description: "离职日期，NULL表示在职"
+      employee_status:
+        type: "VARCHAR(20)"
+        description: "员工状态：在职、离职、休假等"
+      job_level:
+        type: "VARCHAR(10)"
+        description: "职级：如T3、T4、T5等"
+      department_id:
+        type: "VARCHAR(20)"
+        description: "部门ID，外键关联departments表"
+      manager_id:
+        type: "VARCHAR(20)"
+        description: "直属主管员工ID"
+      work_location:
+        type: "VARCHAR(100)"
+        description: "工作地点：北京、上海、深圳等"
+    indexes:
+      - columns: ["department_id"]
+      - columns: ["manager_id"]
+      - columns: ["employee_status"]
+    sample_data: |
+      典型数据示例：
+      - employee_id: "B001234", name: "张三", department_id: "TECH001", job_level: "T4"
+      - employee_id: "B005678", name: "李四", department_id: "PROD002", job_level: "T5"
+
+  # 部门组织架构表
+  departments:
+    description: "部门组织架构表，包含部门层级关系"
+    columns:
+      department_id:
+        type: "VARCHAR(20)"
+        description: "部门ID，主键"
+        primary_key: true
+      department_name:
+        type: "VARCHAR(200)"
+        description: "部门名称"
+      parent_department_id:
+        type: "VARCHAR(20)"
+        description: "上级部门ID，NULL表示顶级部门"
+      department_level:
+        type: "INTEGER"
+        description: "部门层级：1为一级部门，2为二级部门等"
+      department_head_id:
+        type: "VARCHAR(20)"
+        description: "部门负责人员工ID"
+      cost_center:
+        type: "VARCHAR(50)"
+        description: "成本中心编码"
+      business_unit:
+        type: "VARCHAR(100)"
+        description: "业务单元：技术、产品、市场等"
+    indexes:
+      - columns: ["parent_department_id"]
+      - columns: ["department_head_id"]
+    sample_data: |
+      典型数据示例：
+      - department_id: "TECH001", name: "技术研发部", business_unit: "技术"
+      - department_id: "PROD002", name: "产品设计部", business_unit: "产品"
+
+  # 考勤记录表
+  attendance:
+    description: "员工考勤记录表，记录每日打卡和工时信息"
+    columns:
+      attendance_id:
+        type: "BIGINT"
+        description: "考勤记录ID，主键"
+        primary_key: true
+      employee_id:
+        type: "VARCHAR(20)"
+        description: "员工工号"
+      attendance_date:
+        type: "DATE"
+        description: "考勤日期"
+      check_in_time:
+        type: "TIMESTAMP"
+        description: "上班打卡时间"
+      check_out_time:
+        type: "TIMESTAMP"
+        description: "下班打卡时间"
+      work_hours:
+        type: "DECIMAL(4,2)"
+        description: "实际工作小时数"
+      overtime_hours:
+        type: "DECIMAL(4,2)"
+        description: "加班小时数"
+      attendance_status:
+        type: "VARCHAR(20)"
+        description: "考勤状态：正常、迟到、早退、缺勤、请假"
+      leave_type:
+        type: "VARCHAR(50)"
+        description: "请假类型：年假、病假、事假等，NULL表示非请假"
+    indexes:
+      - columns: ["employee_id", "attendance_date"]
+      - columns: ["attendance_date"]
+      - columns: ["attendance_status"]
+    sample_data: |
+      典型数据示例：
+      - employee_id: "B001234", date: "2024-01-15", work_hours: 8.5, status: "正常"
+      - employee_id: "B005678", date: "2024-01-16", work_hours: 0, status: "请假", leave_type: "年假"
+
+  # 薪资信息表
+  salary:
+    description: "员工薪资信息表，记录月度薪资发放情况"
+    columns:
+      salary_id:
+        type: "BIGINT"
+        description: "薪资记录ID，主键"
+        primary_key: true
+      employee_id:
+        type: "VARCHAR(20)"
+        description: "员工工号"
+      salary_month:
+        type: "VARCHAR(7)"
+        description: "薪资月份，格式：YYYY-MM"
+      base_salary:
+        type: "DECIMAL(10,2)"
+        description: "基本工资"
+      performance_bonus:
+        type: "DECIMAL(10,2)"
+        description: "绩效奖金"
+      overtime_pay:
+        type: "DECIMAL(10,2)"
+        description: "加班费"
+      allowances:
+        type: "DECIMAL(10,2)"
+        description: "各类补贴"
+      deductions:
+        type: "DECIMAL(10,2)"
+        description: "各类扣款"
+      gross_salary:
+        type: "DECIMAL(10,2)"
+        description: "税前总工资"
+      tax:
+        type: "DECIMAL(10,2)"
+        description: "个人所得税"
+      net_salary:
+        type: "DECIMAL(10,2)"
+        description: "税后实发工资"
+    indexes:
+      - columns: ["employee_id", "salary_month"]
+      - columns: ["salary_month"]
+    sample_data: |
+      典型数据示例：
+      - employee_id: "B001234", month: "2024-01", base_salary: 25000, net_salary: 22350
+      - employee_id: "B005678", month: "2024-01", base_salary: 35000, net_salary: 30980
+
+  # 绩效评估表
+  performance:
+    description: "员工绩效评估表，记录季度或年度绩效评定"
+    columns:
+      performance_id:
+        type: "BIGINT"
+        description: "绩效记录ID，主键"
+        primary_key: true
+      employee_id:
+        type: "VARCHAR(20)"
+        description: "员工工号"
+      evaluation_period:
+        type: "VARCHAR(10)"
+        description: "评估周期：2024Q1、2024Q2等"
+      performance_score:
+        type: "DECIMAL(3,2)"
+        description: "绩效得分，满分5.0"
+      performance_level:
+        type: "VARCHAR(20)"
+        description: "绩效等级：优秀、良好、达标、待改进"
+      evaluator_id:
+        type: "VARCHAR(20)"
+        description: "评估人员工ID"
+      evaluation_date:
+        type: "DATE"
+        description: "评估日期"
+      comments:
+        type: "TEXT"
+        description: "评估意见"
+    indexes:
+      - columns: ["employee_id", "evaluation_period"]
+      - columns: ["evaluation_period"]
+    sample_data: |
+      典型数据示例：
+      - employee_id: "B001234", period: "2024Q1", score: 4.2, level: "良好"
+      - employee_id: "B005678", period: "2024Q1", score: 4.8, level: "优秀"
+
+  # 培训记录表
+  training:
+    description: "员工培训记录表，记录培训参与情况"
+    columns:
+      training_id:
+        type: "BIGINT"
+        description: "培训记录ID，主键"
+        primary_key: true
+      employee_id:
+        type: "VARCHAR(20)"
+        description: "员工工号"
+      training_name:
+        type: "VARCHAR(200)"
+        description: "培训名称"
+      training_type:
+        type: "VARCHAR(50)"
+        description: "培训类型：技能培训、管理培训、新员工培训等"
+      training_date:
+        type: "DATE"
+        description: "培训日期"
+      duration_hours:
+        type: "INTEGER"
+        description: "培训时长（小时）"
+      completion_status:
+        type: "VARCHAR(20)"
+        description: "完成状态：已完成、进行中、未完成"
+      certificate_obtained:
+        type: "BOOLEAN"
+        description: "是否获得证书"
+    indexes:
+      - columns: ["employee_id"]
+      - columns: ["training_type"]
+      - columns: ["training_date"]
+
+# 表之间的关系
+relationships:
+  - table1: "employees"
+    table2: "departments"
+    relationship: "many_to_one"
+    description: "员工属于部门"
+    
+  - table1: "employees"
+    table2: "employees"
+    relationship: "self_referencing"
+    description: "员工的主管关系"
+    
+  - table1: "attendance"
+    table2: "employees"
+    relationship: "many_to_one"
+    description: "考勤记录属于员工"
+    
+  - table1: "salary"
+    table2: "employees"
+    relationship: "many_to_one"
+    description: "薪资记录属于员工"
+    
+  - table1: "performance"
+    table2: "employees"
+    relationship: "many_to_one"
+    description: "绩效记录属于员工"
+    
+  - table1: "training"
+    table2: "employees"
+    relationship: "many_to_one"
+    description: "培训记录属于员工"
+
+# 常用查询模式
+common_queries:
+  - pattern: "部门统计"
+    description: "按部门统计员工数量、平均薪资等"
+    example: "技术研发部有多少人？平均薪资是多少？"
+    
+  - pattern: "考勤分析"
+    description: "分析员工考勤情况、加班情况等"
+    example: "上个月哪些员工加班最多？"
+    
+  - pattern: "薪资对比"
+    description: "不同级别、部门的薪资对比分析"
+    example: "T4和T5级别的平均薪资差异是多少？"
+    
+  - pattern: "绩效排名"
+    description: "按绩效评分排名和分析"
+    example: "本季度绩效最好的前10名员工是谁？"
+    
+  - pattern: "人员流动"
+    description: "入职、离职趋势分析"
+    example: "今年各部门的离职率如何？"
+
+## 2. SQL生成Agent实现
+"""
+SQL生成Agent - 使用豆包LLM根据自然语言查询生成SQL语句
+文件位置：backend/src/agent/db/sql_agent.py
+"""
+
+import os
+import yaml
+import json
+from typing import Dict, List, Optional, Any
+from pathlib import Path
+from volcenginesdkarkruntime import Ark
+from pydantic import BaseModel, Field
+
+
+class SQLQuery(BaseModel):
+    """SQL查询结果结构"""
+    sql: str = Field(description="生成的SQL查询语句")
+    explanation: str = Field(description="查询逻辑解释")
+    tables_used: List[str] = Field(description="使用的表名列表")
+    estimated_complexity: str = Field(description="查询复杂度：简单、中等、复杂")
+
+
+class SchemaManager:
+    """数据库Schema管理器"""
+    
+    def __init__(self, schema_path: str = None):
+        if schema_path is None:
+            schema_path = Path(__file__).parent / "schemas" / "hr_database_schemas.yaml"
+        
+        self.schema_path = Path(schema_path)
+        self.schema_data = self._load_schema()
+    
+    def _load_schema(self) -> Dict[str, Any]:
+        """加载数据库schema定义"""
+        try:
+            with open(self.schema_path, 'r', encoding='utf-8') as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            raise ValueError(f"Failed to load schema from {self.schema_path}: {e}")
+    
+    def get_table_info(self, table_name: str) -> Optional[Dict[str, Any]]:
+        """获取指定表的详细信息"""
+        return self.schema_data.get("tables", {}).get(table_name)
+    
+    def get_all_tables(self) -> Dict[str, Any]:
+        """获取所有表信息"""
+        return self.schema_data.get("tables", {})
+    
+    def get_relationships(self) -> List[Dict[str, Any]]:
+        """获取表之间的关系"""
+        return self.schema_data.get("relationships", [])
+    
+    def get_common_patterns(self) -> List[Dict[str, Any]]:
+        """获取常用查询模式"""
+        return self.schema_data.get("common_queries", [])
+    
+    def format_schema_for_llm(self, relevant_tables: List[str] = None) -> str:
+        """为LLM格式化schema信息"""
+        schema_text = f"数据库: {self.schema_data.get('database_name', 'Unknown')}\n"
+        schema_text += f"描述: {self.schema_data.get('description', '')}\n\n"
+        
+        tables = self.get_all_tables()
+        if relevant_tables:
+            tables = {k: v for k, v in tables.items() if k in relevant_tables}
+        
+        schema_text += "数据表结构:\n"
+        for table_name, table_info in tables.items():
+            schema_text += f"\n## {table_name}\n"
+            schema_text += f"描述: {table_info.get('description', '')}\n"
+            schema_text += "字段:\n"
+            
+            for col_name, col_info in table_info.get('columns', {}).items():
+                schema_text += f"  - {col_name}: {col_info.get('type', '')} - {col_info.get('description', '')}\n"
+                if col_info.get('primary_key'):
+                    schema_text += "    (主键)\n"
+            
+            if 'sample_data' in table_info:
+                schema_text += f"示例数据:\n{table_info['sample_data']}\n"
+        
+        # 添加关系信息
+        relationships = self.get_relationships()
+        if relationships:
+            schema_text += "\n表关系:\n"
+            for rel in relationships:
+                schema_text += f"- {rel['table1']} 与 {rel['table2']}: {rel['relationship']} ({rel['description']})\n"
+        
+        return schema_text
+
+
+class SQLGeneratorAgent:
+    """SQL生成Agent"""
+    
+    def __init__(self, api_key: str = None, model_name: str = "doubao-pro-256k-241115"):
+        self.api_key = api_key or os.getenv("ARK_API_KEY")
+        if not self.api_key:
+            raise ValueError("ARK_API_KEY is required")
+        
+        self.model_name = model_name
+        self.schema_manager = SchemaManager()
+        self.client = Ark(api_key=self.api_key, timeout=300)
+    
+    def _identify_relevant_tables(self, query: str) -> List[str]:
+        """识别查询相关的表"""
+        tables = self.schema_manager.get_all_tables()
+        relevant_tables = []
+        
+        query_lower = query.lower()
+        
+        # 基于关键词匹配识别相关表
+        keyword_mapping = {
+            "employees": ["员工", "人员", "姓名", "工号", "入职", "离职", "职级"],
+            "departments": ["部门", "组织", "架构", "业务单元"],
+            "attendance": ["考勤", "打卡", "出勤", "请假", "加班", "工时"],
+            "salary": ["薪资", "工资", "薪水", "收入", "奖金", "税"],
+            "performance": ["绩效", "评估", "考核", "评分", "表现"],
+            "training": ["培训", "学习", "证书", "技能"]
+        }
+        
+        for table_name, keywords in keyword_mapping.items():
+            if any(keyword in query_lower for keyword in keywords):
+                relevant_tables.append(table_name)
+        
+        # 如果没有明确匹配，默认包含employees表
+        if not relevant_tables:
+            relevant_tables = ["employees"]
+        
+        return relevant_tables
+    
+    def _create_sql_prompt(self, query: str, relevant_tables: List[str]) -> str:
+        """创建SQL生成提示词"""
+        schema_info = self.schema_manager.format_schema_for_llm(relevant_tables)
+        
+        prompt = f"""你是一个专业的SQL查询生成专家，专门处理字节跳动人员主数据查询需求。
+
+数据库结构信息：
+{schema_info}
+
+用户查询需求：{query}
+
+请根据用户的查询需求生成准确的SQL语句。要求：
+
+1. SQL语句必须语法正确，能够在实际数据库中执行
+2. 只使用提供的表和字段，不要使用不存在的表或字段
+3. 考虑表之间的关联关系，正确使用JOIN
+4. 对于统计查询，使用适当的聚合函数
+5. 添加必要的WHERE条件进行数据过滤
+6. 考虑性能优化，避免全表扫描
+7. 对日期范围查询要合理处理
+
+输出格式要求（JSON）：
+{{
+    "sql": "生成的SQL查询语句",
+    "explanation": "查询逻辑的详细解释",
+    "tables_used": ["使用的表名列表"],
+    "estimated_complexity": "查询复杂度评估：简单/中等/复杂"
+}}
+
+请确保JSON格式正确，可以被解析。"""
+        
+        return prompt
+    
+    def generate_sql(self, query: str) -> SQLQuery:
+        """根据自然语言查询生成SQL"""
+        try:
+            # 识别相关表
+            relevant_tables = self._identify_relevant_tables(query)
+            
+            # 创建提示词
+            prompt = self._create_sql_prompt(query, relevant_tables)
+            
+            # 调用豆包模型
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,  # 使用较低温度确保结果稳定
+            )
+            
+            # 解析响应
+            content = response.choices[0].message.content.strip()
+            
+            # 提取JSON部分
+            json_start = content.find("{")
+            json_end = content.rfind("}") + 1
+            
+            if json_start == -1 or json_end <= json_start:
+                raise ValueError("No valid JSON found in response")
+            
+            json_content = content[json_start:json_end]
+            parsed_data = json.loads(json_content)
+            
+            return SQLQuery(**parsed_data)
+            
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse JSON response: {e}\nContent: {content}")
+        except Exception as e:
+            raise RuntimeError(f"SQL generation failed: {e}")
+    
+    def validate_sql(self, sql: str) -> Dict[str, Any]:
+        """基础SQL验证（语法检查）"""
+        validation_result = {
+            "is_valid": True,
+            "issues": [],
+            "warnings": []
+        }
+        
+        sql_upper = sql.upper().strip()
+        
+        # 基础安全检查
+        dangerous_keywords = ["DROP", "DELETE", "TRUNCATE", "ALTER", "CREATE", "UPDATE"]
+        for keyword in dangerous_keywords:
+            if keyword in sql_upper:
+                validation_result["is_valid"] = False
+                validation_result["issues"].append(f"包含危险操作: {keyword}")
+        
+        # 检查是否为SELECT查询
+        if not sql_upper.startswith("SELECT"):
+            validation_result["is_valid"] = False
+            validation_result["issues"].append("只允许SELECT查询")
+        
+        # 检查表名是否存在
+        available_tables = set(self.schema_manager.get_all_tables().keys())
+        used_tables = set()
+        
+        for table_name in available_tables:
+            if table_name.upper() in sql_upper:
+                used_tables.add(table_name)
+        
+        if not used_tables:
+            validation_result["warnings"].append("未检测到已知表名")
+        
+        return validation_result
+
+
+# 使用示例和测试函数
+def test_sql_agent():
+    """测试SQL生成Agent"""
+    try:
+        agent = SQLGeneratorAgent()
+        
+        test_queries = [
+            "技术研发部有多少名员工？",
+            "上个月加班时间最多的前10名员工是谁？",
+            "T4和T5级别员工的平均薪资差异是多少？",
+            "本季度绩效评分最高的员工名单",
+            "各部门的离职率统计"
+        ]
+        
+        for query in test_queries:
+            print(f"\n查询: {query}")
+            print("-" * 50)
+            
+            result = agent.generate_sql(query)
+            print(f"SQL: {result.sql}")
+            print(f"解释: {result.explanation}")
+            print(f"使用表: {result.tables_used}")
+            print(f"复杂度: {result.estimated_complexity}")
+            
+            # 验证SQL
+            validation = agent.validate_sql(result.sql)
+            print(f"验证结果: {'通过' if validation['is_valid'] else '失败'}")
+            if validation["issues"]:
+                print(f"问题: {validation['issues']}")
+            if validation["warnings"]:
+                print(f"警告: {validation['warnings']}")
+            
+    except Exception as e:
+        print(f"测试失败: {e}")
+
+
+if __name__ == "__main__":
+    test_sql_agent()
+
+## 3. 数据库客户端和执行器
+"""
+数据库连接和查询执行器
+文件位置：backend/src/agent/db/db_client.py
+"""
+
+import os
+import logging
+from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass
+from datetime import datetime
+import pandas as pd
+
+# 根据实际使用的数据库类型选择相应的驱动
+# 这里以常见的数据库为例，您可以根据实际情况调整
+try:
+    # MySQL
+    import mysql.connector
+    from mysql.connector import Error as MySQLError
+    MYSQL_AVAILABLE = True
+except ImportError:
+    MYSQL_AVAILABLE = False
+
+try:
+    # PostgreSQL
+    import psycopg2
+    from psycopg2 import Error as PostgreSQLError
+    POSTGRESQL_AVAILABLE = True
+except ImportError:
+    POSTGRESQL_AVAILABLE = False
+
+try:
+    # SQL Server
+    import pyodbc
+    SQLSERVER_AVAILABLE = True
+except ImportError:
+    SQLSERVER_AVAILABLE = False
+
+
+@dataclass
+class QueryResult:
+    """查询结果数据结构"""
+    data: List[Dict[str, Any]]  # 查询结果数据
+    columns: List[str]  # 列名
+    row_count: int  # 行数
+    execution_time: float  # 执行时间（秒）
+    sql: str  # 执行的SQL语句
+    success: bool  # 是否成功
+    error_message: Optional[str] = None  # 错误信息
+
+
+class DatabaseConfig:
+    """数据库配置类"""
+    
+    def __init__(self):
+        # 从环境变量读取数据库配置
+        self.db_type = os.getenv("DB_TYPE", "mysql").lower()  # mysql, postgresql, sqlserver
+        self.host = os.getenv("DB_HOST", "localhost")
+        self.port = int(os.getenv("DB_PORT", self._get_default_port()))
+        self.database = os.getenv("DB_NAME", "bytedance_hr")
+        self.username = os.getenv("DB_USERNAME", "")
+        self.password = os.getenv("DB_PASSWORD", "")
+        
+        # 连接池配置
+        self.pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+        self.max_connections = int(os.getenv("DB_MAX_CONNECTIONS", "20"))
+        
+        # 查询配置
+        self.query_timeout = int(os.getenv("DB_QUERY_TIMEOUT", "30"))  # 秒
+        self.max_rows = int(os.getenv("DB_MAX_ROWS", "10000"))  # 最大返回行数
+    
+    def _get_default_port(self) -> int:
+        """获取默认端口"""
+        port_mapping = {
+            "mysql": 3306,
+            "postgresql": 5432,
+            "sqlserver": 1433
+        }
+        return port_mapping.get(self.db_type, 3306)
+    
+    def validate(self) -> Tuple[bool, List[str]]:
+        """验证配置"""
+        errors = []
+        
+        if not self.host:
+            errors.append("DB_HOST is required")
+        if not self.database:
+            errors.append("DB_NAME is required")
+        if not self.username:
+            errors.append("DB_USERNAME is required")
+        if not self.password:
+            errors.append("DB_PASSWORD is required")
+        
+        # 检查数据库驱动是否可用
+        if self.db_type == "mysql" and not MYSQL_AVAILABLE:
+            errors.append("MySQL connector not available. Install: pip install mysql-connector-python")
+        elif self.db_type == "postgresql" and not POSTGRESQL_AVAILABLE:
+            errors.append("PostgreSQL connector not available. Install: pip install psycopg2-binary")
+        elif self.db_type == "sqlserver" and not SQLSERVER_AVAILABLE:
+            errors.append("SQL Server connector not available. Install: pip install pyodbc")
+        
+        return len(errors) == 0, errors
+
+
+class DatabaseClient:
+    """数据库客户端"""
+    
+    def __init__(self, config: DatabaseConfig = None):
+        self.config = config or DatabaseConfig()
+        self.connection = None
+        self.logger = logging.getLogger(__name__)
+        
+        # 验证配置
+        is_valid, errors = self.config.validate()
+        if not is_valid:
+            raise ValueError(f"Database configuration errors: {', '.join(errors)}")
+    
+    def connect(self) -> bool:
+        """建立数据库连接"""
+        try:
+            if self.config.db_type == "mysql":
+                self.connection = mysql.connector.connect(
+                    host=self.config.host,
+                    port=self.config.port,
+                    database=self.config.database,
+                    user=self.config.username,
+                    password=self.config.password,
+                    autocommit=True,
+                    connection_timeout=self.config.query_timeout
+                )
+            
+            elif self.config.db_type == "postgresql":
+                self.connection = psycopg2.connect(
+                    host=self.config.host,
+                    port=self.config.port,
+                    database=self.config.database,
+                    user=self.config.username,
+                    password=self.config.password
+                )
+                self.connection.autocommit = True
+            
+            elif self.config.db_type == "sqlserver":
+                connection_string = (
+                    f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                    f"SERVER={self.config.host},{self.config.port};"
+                    f"DATABASE={self.config.database};"
+                    f"UID={self.config.username};"
+                    f"PWD={self.config.password}"
+                )
+                self.connection = pyodbc.connect(connection_string)
+                self.connection.autocommit = True
+            
+            else:
+                raise ValueError(f"Unsupported database type: {self.config.db_type}")
+            
+            self.logger.info(f"Connected to {self.config.db_type} database: {self.config.database}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to connect to database: {e}")
+            return False
+    
+    def disconnect(self):
+        """关闭数据库连接"""
+        if self.connection:
+            try:
+                self.connection.close()
+                self.logger.info("Database connection closed")
+            except Exception as e:
+                self.logger.error(f"Error closing database connection: {e}")
+            finally:
+                self.connection = None
+    
+    def execute_query(self, sql: str, params: Optional[List] = None) -> QueryResult:
+        """执行SQL查询"""
+        start_time = datetime.now()
+        
+        try:
+            if not self.connection:
+                if not self.connect():
+                    return QueryResult(
+                        data=[], columns=[], row_count=0, execution_time=0,
+                        sql=sql, success=False, error_message="Failed to connect to database"
+                    )
+            
+            cursor = self.connection.cursor()
+            
+            # 设置查询超时
+            if hasattr(cursor, 'execute'):
+                if params:
+                    cursor.execute(sql, params)
+                else:
+                    cursor.execute(sql)
+            
+            # 获取列名
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
+            
+            # 获取数据
+            rows = cursor.fetchall()
+            
+            # 限制返回行数
+            if len(rows) > self.config.max_rows:
+                self.logger.warning(f"Query returned {len(rows)} rows, limiting to {self.config.max_rows}")
+                rows = rows[:self.config.max_rows]
+            
+            # 转换为字典列表
+            data = []
+            for row in rows:
+                row_dict = {}
+                for i, col_name in enumerate(columns):
+                    value = row[i]
+                    # 处理特殊数据类型
+                    if isinstance(value, datetime):
+                        value = value.isoformat()
+                    elif hasattr(value, 'isoformat'):  # 处理日期类型
+                        value = value.isoformat()
+                    row_dict[col_name] = value
+                data.append(row_dict)
+            
+            cursor.close()
+            
+            execution_time = (datetime.now() - start_time).total_seconds()
+            
+            self.logger.info(f"Query executed successfully. Rows: {len(data)}, Time: {execution_time:.2f}s")
+            
+            return QueryResult(
+                data=data,
+                columns=columns,
+                row_count=len(data),
+                execution_time=execution_time,
+                sql=sql,
+                success=True
+            )
+            
+        except Exception as e:
+            execution_time = (datetime.now() - start_time).total_seconds()
+            error_message = str(e)
+            self.logger.error(f"Query execution failed: {error_message}")
+            
+            return QueryResult(
+                data=[], columns=[], row_count=0, execution_time=execution_time,
+                sql=sql, success=False, error_message=error_message
+            )
+    
+    def test_connection(self) -> Tuple[bool, str]:
+        """测试数据库连接"""
+        try:
+            if self.connect():
+                # 执行简单的测试查询
+                result = self.execute_query("SELECT 1 as test")
+                if result.success:
+                    return True, "Connection test successful"
+                else:
+                    return False, f"Test query failed: {result.error_message}"
+            else:
+                return False, "Failed to establish connection"
+        except Exception as e:
+            return False, f"Connection test failed: {e}"
+        finally:
+            self.disconnect()
+    
+    def get_table_info(self, table_name: str) -> QueryResult:
+        """获取表结构信息"""
+        if self.config.db_type == "mysql":
+            sql = f"DESCRIBE {table_name}"
+        elif self.config.db_type == "postgresql":
+            sql = f"""
+            SELECT column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns 
+            WHERE table_name = '{table_name}'
+            """
+        elif self.config.db_type == "sqlserver":
+            sql = f"""
+            SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_NAME = '{table_name}'
+            """
+        else:
+            return QueryResult(
+                data=[], columns=[], row_count=0, execution_time=0,
+                sql="", success=False, error_message="Unsupported database type"
+            )
+        
+        return self.execute_query(sql)
+    
+    def __enter__(self):
+        """上下文管理器入口"""
+        self.connect()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """上下文管理器出口"""
+        self.disconnect()
+
+
+class MockDatabaseClient(DatabaseClient):
+    """模拟数据库客户端（用于测试和开发）"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.mock_data = self._generate_mock_data()
+    
+    def _generate_mock_data(self) -> Dict[str, List[Dict[str, Any]]]:
+        """生成模拟数据"""
+        return {
+            "employees": [
+                {"employee_id": "B001234", "employee_name": "张三", "department_id": "TECH001", "job_level": "T4", "hire_date": "2022-01-15"},
+                {"employee_id": "B005678", "employee_name": "李四", "department_id": "PROD002", "job_level": "T5", "hire_date": "2021-03-20"},
+                {"employee_id": "B009876", "employee_name": "王五", "department_id": "TECH001", "job_level": "T3", "hire_date": "2023-05-10"},
+            ],
+            "departments": [
+                {"department_id": "TECH001", "department_name": "技术研发部", "business_unit": "技术"},
+                {"department_id": "PROD002", "department_name": "产品设计部", "business_unit": "产品"},
+            ],
+            "attendance": [
+                {"employee_id": "B001234", "attendance_date": "2024-01-15", "work_hours": 8.5, "overtime_hours": 1.5, "attendance_status": "正常"},
+                {"employee_id": "B005678", "attendance_date": "2024-01-15", "work_hours": 8.0, "overtime_hours": 2.0, "attendance_status": "正常"},
+            ]
+        }
+    
+    def connect(self) -> bool:
+        self.logger.info("Connected to mock database")
+        return True
+    
+    def disconnect(self):
+        self.logger.info("Disconnected from mock database")
+    
+    def execute_query(self, sql: str, params: Optional[List] = None) -> QueryResult:
+        """模拟执行SQL查询"""
+        start_time = datetime.now()
+        
+        try:
+            # 简单的SQL解析来返回相应的模拟数据
+            sql_lower = sql.lower()
+            
+            if "employees" in sql_lower:
+                data = self.mock_data["employees"]
+                columns = ["employee_id", "employee_name", "department_id", "job_level", "hire_date"]
+            elif "departments" in sql_lower:
+                data = self.mock_data["departments"]
+                columns = ["department_id", "department_name", "business_unit"]
+            elif "attendance" in sql_lower:
+                data = self.mock_data["attendance"]
+                columns = ["employee_id", "attendance_date", "work_hours", "overtime_hours", "attendance_status"]
+            else:
+                # 返回汇总数据
+                data = [{"count": 10, "average": 25000.50}]
+                columns = ["count", "average"]
+            
+            execution_time = (datetime.now() - start_time).total_seconds()
+            
+            return QueryResult(
+                data=data,
+                columns=columns,
+                row_count=len(data),
+                execution_time=execution_time,
+                sql=sql,
+                success=True
+            )
+            
+        except Exception as e:
+            execution_time = (datetime.now() - start_time).total_seconds()
+            return QueryResult(
+                data=[], columns=[], row_count=0, execution_time=execution_time,
+                sql=sql, success=False, error_message=str(e)
+            )
+
+
+def create_database_client(use_mock: bool = None) -> DatabaseClient:
+    """创建数据库客户端实例"""
+    if use_mock is None:
+        use_mock = os.getenv("USE_MOCK_DB", "false").lower() == "true"
+    
+    if use_mock:
+        return MockDatabaseClient()
+    else:
+        return DatabaseClient()
+
+
+# 测试函数
+def test_database_client():
+    """测试数据库客户端"""
+    try:
+        # 使用模拟客户端进行测试
+        with create_database_client(use_mock=True) as db:
+            # 测试连接
+            success, message = db.test_connection()
+            print(f"Connection test: {message}")
+            
+            # 测试查询
+            test_queries = [
+                "SELECT * FROM employees",
+                "SELECT department_name, COUNT(*) as employee_count FROM employees e JOIN departments d ON e.department_id = d.department_id GROUP BY department_name",
+                "SELECT employee_name, SUM(overtime_hours) as total_overtime FROM employees e JOIN attendance a ON e.employee_id = a.employee_id GROUP BY employee_name ORDER BY total_overtime DESC"
+            ]
+            
+            for sql in test_queries:
+                print(f"\nExecuting: {sql}")
+                result = db.execute_query(sql)
+                print(f"Success: {result.success}")
+                print(f"Rows: {result.row_count}")
+                print(f"Execution time: {result.execution_time:.3f}s")
+                if result.error_message:
+                    print(f"Error: {result.error_message}")
+                elif result.data:
+                    print(f"Sample data: {result.data[0]}")
+                    
+    except Exception as e:
+        print(f"Test failed: {e}")
+
+
+if __name__ == "__main__":
+    test_database_client()
+
+## 4. 结果处理和格式化器
+"""
+查询结果处理和格式化器
+文件位置：backend/src/agent/db/result_processor.py
+"""
+
+import os
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+from volcenginesdkarkruntime import Ark
+
+from .db_client import QueryResult
+
+
+class ResultFormatter:
+    """查询结果格式化器"""
+    
+    def __init__(self, api_key: str = None, model_name: str = "doubao-pro-256k-241115"):
+        self.api_key = api_key or os.getenv("ARK_API_KEY")
+        self.model_name = model_name
+        if self.api_key:
+            self.client = Ark(api_key=self.api_key, timeout=300)
+        else:
+            self.client = None
+    
+    def format_table_data(self, query_result: QueryResult, max_rows: int = 50) -> str:
+        """将查询结果格式化为表格形式"""
+        if not query_result.success:
+            return f"查询执行失败: {query_result.error_message}"
+        
+        if not query_result.data:
+            return "查询没有返回任何数据。"
+        
+        # 限制显示行数
+        data_to_show = query_result.data[:max_rows]
+        
+        # 创建表格
+        table_text = "查询结果:\n\n"
+        
+        # 表头
+        headers = query_result.columns
+        header_line = " | ".join(f"{col:>12}" for col in headers)
+        separator_line = " | ".join("-" * 12 for _ in headers)
+        
+        table_text += header_line + "\n"
+        table_text += separator_line + "\n"
+        
+        # 数据行
+        for row in data_to_show:
+            row_values = []
+            for col in headers:
+                value = row.get(col, "")
+                # 格式化不同类型的数据
+                if isinstance(value, float):
+                    value = f"{value:.2f}"
+                elif value is None:
+                    value = "NULL"
+                else:
+                    value = str(value)
+                
+                # 截断过长的文本
+                if len(value) > 12:
+                    value = value[:9] + "..."
+                
+                row_values.append(f"{value:>12}")
+            
+            table_text += " | ".join(row_values) + "\n"
+        
+        # 添加统计信息
+        if len(query_result.data) > max_rows:
+            table_text += f"\n... 显示前 {max_rows} 行，共 {query_result.row_count} 行"
+        else:
+            table_text += f"\n共 {query_result.row_count} 行"
+        
+        table_text += f"\n执行时间: {query_result.execution_time:.3f} 秒"
+        
+        return table_text
+    
+    def create_summary_statistics(self, query_result: QueryResult) -> Dict[str, Any]:
+        """创建查询结果的统计摘要"""
+        if not query_result.success or not query_result.data:
+            return {"error": "无法生成统计信息"}
+        
+        stats = {
+            "total_rows": query_result.row_count,
+            "columns": query_result.columns,
+            "execution_time": query_result.execution_time,
+            "column_stats": {}
+        }
+        
+        # 分析每列的统计信息
+        for col in query_result.columns:
+            values = [row.get(col) for row in query_result.data if row.get(col) is not None]
+            
+            col_stats = {
+                "non_null_count": len(values),
+                "null_count": query_result.row_count - len(values)
+            }
+            
+            if values:
+                # 检查数据类型
+                sample_value = values[0]
+                
+                if isinstance(sample_value, (int, float)):
+                    # 数值类型统计
+                    numeric_values = [float(v) for v in values if isinstance(v, (int, float))]
+                    if numeric_values:
+                        col_stats.update({
+                            "type": "numeric",
+                            "min": min(numeric_values),
+                            "max": max(numeric_values),
+                            "avg": sum(numeric_values) / len(numeric_values)
+                        })
+                
+                elif isinstance(sample_value, str):
+                    # 字符串类型统计
+                    unique_values = set(values)
+                    col_stats.update({
+                        "type": "text",
+                        "unique_count": len(unique_values),
+                        "most_common": max(set(values), key=values.count) if values else None
+                    })
+                
+                else:
+                    col_stats["type"] = "other"
+            
+            stats["column_stats"][col] = col_stats
+        
+        return stats
+    
+    def generate_insights(self, query_result: QueryResult, original_query: str) -> str:
+        """使用LLM生成查询结果的洞察分析"""
+        if not self.client:
+            return "无法生成洞察分析: 未配置LLM客户端"
+        
+        if not query_result.success:
+            return f"查询失败，无法生成洞察: {query_result.error_message}"
+        
+        # 准备数据摘要
+        stats = self.create_summary_statistics(query_result)
+        table_preview = self.format_table_data(query_result, max_rows=10)
+        
+        prompt = f"""作为一名专业的数据分析师，请基于以下SQL查询结果提供专业的洞察分析。
+
+原始查询问题: {original_query}
+
+执行的SQL: {query_result.sql}
+
+查询结果摘要:
+- 总行数: {stats['total_rows']}
+- 执行时间: {stats['execution_time']:.3f} 秒
+- 包含字段: {', '.join(stats['columns'])}
+
+数据预览:
+{table_preview}
+
+请提供以下分析:
+1. 数据概览: 简要描述查询返回的主要信息
+2. 关键发现: 从数据中发现的重要趋势或模式
+3. 数据质量: 评估数据的完整性和可靠性
+4. 业务洞察: 这些数据对业务决策的意义
+5. 建议行动: 基于数据的建议或需要进一步分析的方向
+
+请用中文回答，保持专业性和简洁性。"""
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            return f"生成洞察分析失败: {e}"
+    
+    def format_for_research(self, query_result: QueryResult, original_query: str, sql_explanation: str) -> str:
+        """为research agent格式化查询结果"""
+        if not query_result.success:
+            return f"数据库查询失败: {query_result.error_message}"
+        
+        # 构建研究报告格式的输出
+        output = f"## 数据查询结果\n\n"
+        output += f"**查询问题**: {original_query}\n\n"
+        output += f"**查询逻辑**: {sql_explanation}\n\n"
+        
+        if query_result.data:
+            # 数据摘要
+            stats = self.create_summary_statistics(query_result)
+            output += f"**数据摘要**: 查询返回 {stats['total_rows']} 条记录，执行时间 {stats['execution_time']:.3f} 秒\n\n"
+            
+            # 关键数据展示
+            if stats['total_rows'] <= 20:
+                # 小数据量，显示全部
+                output += "**完整数据**:\n\n"
+                output += self.format_table_data(query_result, max_rows=stats['total_rows'])
+            else:
+                # 大数据量，显示摘要
+                output += "**数据预览** (前10行):\n\n"
+                output += self.format_table_data(query_result, max_rows=10)
+                
+                # 添加统计信息
+                output += "\n\n**统计摘要**:\n"
+                for col, col_stats in stats['column_stats'].items():
+                    if col_stats.get('type') == 'numeric':
+                        output += f"- {col}: 平均值 {col_stats['avg']:.2f}, 范围 {col_stats['min']}-{col_stats['max']}\n"
+                    elif col_stats.get('type') == 'text':
+                        output += f"- {col}: {col_stats['unique_count']} 个不同值, 最常见: {col_stats['most_common']}\n"
+            
+            # 生成洞察（如果可用）
+            if self.client:
+                insights = self.generate_insights(query_result, original_query)
+                output += f"\n\n**数据洞察**:\n{insights}\n"
+        
+        else:
+            output += "**结果**: 查询没有返回任何数据。\n"
+        
+        return output
+
+
+class CitationGenerator:
+    """引用生成器，为数据库查询结果创建引用信息"""
+    
+    def __init__(self):
+        self.citation_counter = 0
+    
+    def create_citation(self, query_result: QueryResult, original_query: str) -> Dict[str, Any]:
+        """为查询结果创建引用信息"""
+        self.citation_counter += 1
+        
+        citation = {
+            "label": f"数据查询{self.citation_counter}",
+            "short_url": f"db://query_{self.citation_counter}",
+            "value": f"内部数据库查询: {original_query}",
+            "source_type": "database",
+            "metadata": {
+                "sql": query_result.sql,
+                "row_count": query_result.row_count,
+                "execution_time": query_result.execution_time,
+                "timestamp": datetime.now().isoformat(),
+                "tables_used": self._extract_tables_from_sql(query_result.sql)
+            }
+        }
+        
+        return citation
+    
+    def _extract_tables_from_sql(self, sql: str) -> List[str]:
+        """从SQL中提取表名"""
+        # 简单的表名提取逻辑
+        sql_upper = sql.upper()
+        tables = []
+        
+        common_tables = ["EMPLOYEES", "DEPARTMENTS", "ATTENDANCE", "SALARY", "PERFORMANCE", "TRAINING"]
+        for table in common_tables:
+            if table in sql_upper:
+                tables.append(table.lower())
+        
+        return tables
+    
+    def format_citation_markers(self, text: str, citations: List[Dict[str, Any]]) -> str:
+        """在文本中插入引用标记"""
+        # 在文本末尾添加引用
+        citation_text = text
+        
+        if citations:
+            citation_text += "\n\n**数据来源**:\n"
+            for citation in citations:
+                citation_text += f"- [{citation['label']}]: {citation['value']}\n"
+        
+        return citation_text
+
+
+# 使用示例
+def test_result_processor():
+    """测试结果处理器"""
+    from .db_client import MockDatabaseClient
+    
+    # 创建模拟查询结果
+    mock_client = MockDatabaseClient()
+    query_result = mock_client.execute_query("SELECT * FROM employees")
+    
+    # 测试格式化器
+    formatter = ResultFormatter()
+    
+    print("=== 表格格式 ===")
+    table_output = formatter.format_table_data(query_result)
+    print(table_output)
+    
+    print("\n=== 统计摘要 ===")
+    stats = formatter.create_summary_statistics(query_result)
+    print(f"总行数: {stats['total_rows']}")
+    print(f"字段: {stats['columns']}")
+    
+    print("\n=== 研究格式 ===")
+    research_output = formatter.format_for_research(
+        query_result, 
+        "技术研发部有多少名员工？", 
+        "查询employees表中department_id为TECH001的员工数量"
+    )
+    print(research_output)
+    
+    print("\n=== 引用生成 ===")
+    citation_gen = CitationGenerator()
+    citation = citation_gen.create_citation(query_result, "技术研发部有多少名员工？")
+    print(f"引用: {citation}")
+
+
+if __name__ == "__main__":
+    test_result_processor()
+
+## 5. 修改 web_research 函数
+"""
+数据库研究模块 - 替换web_research的数据库查询实现
+文件位置：backend/src/agent/db/database_research.py
+"""
+
+import os
+import logging
+from typing import Dict, List, Any, Tuple
+from .sql_agent import SQLGeneratorAgent, SQLQuery
+from .db_client import create_database_client, QueryResult
+from .result_processor import ResultFormatter, CitationGenerator
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class DatabaseResearcher:
+    """数据库研究器 - 将自然语言查询转换为数据库查询并返回格式化结果"""
+    
+    def __init__(self):
+        # 初始化组件
+        self.sql_agent = SQLGeneratorAgent()
+        self.result_formatter = ResultFormatter()
+        self.citation_generator = CitationGenerator()
+        
+        # 数据库客户端（延迟初始化）
+        self._db_client = None
+    
+    @property
+    def db_client(self):
+        """延迟初始化数据库客户端"""
+        if self._db_client is None:
+            self._db_client = create_database_client()
+        return self._db_client
+    
+    def research(self, query: str, query_id: int = 0) -> Tuple[str, List[Dict[str, Any]]]:
+        """
+        执行数据库研究
+        
+        Args:
+            query: 自然语言查询
+            query_id: 查询ID，用于生成唯一的引用
+            
+        Returns:
+            Tuple[研究结果文本, 引用列表]
+        """
+        try:
+            logger.info(f"开始数据库研究: {query}")
+            
+            # 步骤1: 生成SQL查询
+            sql_result = self._generate_sql(query)
+            if not sql_result:
+                return self._create_error_result("SQL生成失败", query_id)
+            
+            # 步骤2: 验证SQL
+            validation_result = self._validate_sql(sql_result)
+            if not validation_result["is_valid"]:
+                error_msg = f"SQL验证失败: {', '.join(validation_result['issues'])}"
+                return self._create_error_result(error_msg, query_id)
+            
+            # 步骤3: 执行数据库查询
+            query_result = self._execute_query(sql_result.sql)
+            if not query_result.success:
+                error_msg = f"数据库查询失败: {query_result.error_message}"
+                return self._create_error_result(error_msg, query_id)
+            
+            # 步骤4: 格式化结果
+            formatted_result = self._format_result(query_result, query, sql_result.explanation)
+            
+            # 步骤5: 生成引用
+            citations = self._generate_citations(query_result, query, query_id)
+            
+            logger.info(f"数据库研究完成: 返回 {query_result.row_count} 行数据")
+            return formatted_result, citations
+            
+        except Exception as e:
+            logger.error(f"数据库研究失败: {e}")
+            return self._create_error_result(f"研究过程出错: {str(e)}", query_id)
+    
+    def _generate_sql(self, query: str) -> SQLQuery:
+        """生成SQL查询"""
+        try:
+            return self.sql_agent.generate_sql(query)
+        except Exception as e:
+            logger.error(f"SQL生成失败: {e}")
+            return None
+    
+    def _validate_sql(self, sql_result: SQLQuery) -> Dict[str, Any]:
+        """验证SQL查询"""
+        try:
+            return self.sql_agent.validate_sql(sql_result.sql)
+        except Exception as e:
+            logger.error(f"SQL验证失败: {e}")
+            return {"is_valid": False, "issues": [str(e)]}
+    
+    def _execute_query(self, sql: str) -> QueryResult:
+        """执行数据库查询"""
+        try:
+            with self.db_client as db:
+                return db.execute_query(sql)
+        except Exception as e:
+            logger.error(f"数据库查询执行失败: {e}")
+            return QueryResult(
+                data=[], columns=[], row_count=0, execution_time=0,
+                sql=sql, success=False, error_message=str(e)
+            )
+    
+    def _format_result(self, query_result: QueryResult, original_query: str, sql_explanation: str) -> str:
+        """格式化查询结果"""
+        try:
+            return self.result_formatter.format_for_research(
+                query_result, original_query, sql_explanation
+            )
+        except Exception as e:
+            logger.error(f"结果格式化失败: {e}")
+            return f"结果格式化出错: {str(e)}"
+    
+    def _generate_citations(self, query_result: QueryResult, original_query: str, query_id: int) -> List[Dict[str, Any]]:
+        """生成引用信息"""
+        try:
+            citation = self.citation_generator.create_citation(query_result, original_query)
+            # 添加查询ID到short_url中
+            citation["short_url"] = f"db://query_{query_id}"
+            return [citation]
+        except Exception as e:
+            logger.error(f"引用生成失败: {e}")
+            return []
+    
+    def _create_error_result(self, error_message: str, query_id: int) -> Tuple[str, List[Dict[str, Any]]]:
+        """创建错误结果"""
+        result_text = f"数据库查询出现问题: {error_message}\n\n这可能是因为:\n1. 查询语句过于复杂\n2. 数据库连接问题\n3. 权限不足\n\n请尝试重新表述您的问题。"
+        
+        citations = [{
+            "label": f"查询错误{query_id}",
+            "short_url": f"db://error_{query_id}",
+            "value": f"数据库查询错误: {error_message}"
+        }]
+        
+        return result_text, citations
+    
+    def test_connection(self) -> Tuple[bool, str]:
+        """测试数据库连接"""
+        try:
+            return self.db_client.test_connection()
+        except Exception as e:
+            return False, f"连接测试失败: {e}"
+    
+    def get_available_tables(self) -> List[str]:
+        """获取可用的表列表"""
+        try:
+            return list(self.sql_agent.schema_manager.get_all_tables().keys())
+        except Exception as e:
+            logger.error(f"获取表列表失败: {e}")
+            return []
+
+
+# 全局研究器实例
+_database_researcher = None
+
+def get_database_researcher() -> DatabaseResearcher:
+    """获取数据库研究器单例"""
+    global _database_researcher
+    if _database_researcher is None:
+        _database_researcher = DatabaseResearcher()
+    return _database_researcher
+
+
+def database_research(query: str, query_id: int = 0) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    数据库研究函数 - 供graph.py中的web_research节点调用
+    
+    Args:
+        query: 自然语言查询
+        query_id: 查询ID
+        
+    Returns:
+        Tuple[研究结果文本, 引用列表]
+    """
+    researcher = get_database_researcher()
+    return researcher.research(query, query_id)
+
+
+# 批量查询支持
+def batch_database_research(queries: List[str]) -> List[Tuple[str, List[Dict[str, Any]]]]:
+    """
+    批量数据库研究
+    
+    Args:
+        queries: 查询列表
+        
+    Returns:
+        List[Tuple[研究结果文本, 引用列表]]
+    """
+    researcher = get_database_researcher()
+    results = []
+    
+    for i, query in enumerate(queries):
+        try:
+            result = researcher.research(query, i)
+            results.append(result)
+        except Exception as e:
+            logger.error(f"批量查询第{i+1}个失败: {e}")
+            error_result = researcher._create_error_result(str(e), i)
+            results.append(error_result)
+    
+    return results
+
+
+# 测试和验证函数
+def test_database_research():
+    """测试数据库研究功能"""
+    print("=== 数据库研究测试 ===")
+    
+    researcher = get_database_researcher()
+    
+    # 测试连接
+    success, message = researcher.test_connection()
+    print(f"数据库连接测试: {message}")
+    
+    if not success:
+        print("数据库连接失败，使用模拟数据进行测试")
+    
+    # 测试查询
+    test_queries = [
+        "技术研发部有多少名员工？",
+        "上个月加班时间最多的前5名员工是谁？",
+        "各部门的平均薪资是多少？",
+        "本季度绩效最好的员工有哪些？"
+    ]
+    
+    for i, query in enumerate(test_queries):
+        print(f"\n--- 测试查询 {i+1}: {query} ---")
+        try:
+            result_text, citations = database_research(query, i)
+            print("结果:")
+            print(result_text[:500] + "..." if len(result_text) > 500 else result_text)
+            print(f"\n引用数量: {len(citations)}")
+            if citations:
+                print(f"引用示例: {citations[0]['label']} -> {citations[0]['short_url']}")
+        except Exception as e:
+            print(f"查询失败: {e}")
+
+
+if __name__ == "__main__":
+    test_database_research()
+
+## 6. 修改 graph.py 中的 web_research 函数
+import os
+import json
+
+from agent.tools_and_schemas import SearchQueryList, Reflection
+from dotenv import load_dotenv
+from langchain_core.messages import AIMessage
+from langgraph.types import Send
+from langgraph.graph import StateGraph
+from langgraph.graph import START, END
+from langchain_core.runnables import RunnableConfig
+# 替换为豆包SDK
+from volcenginesdkarkruntime import Ark
+
+from agent.state import (
+    OverallState,
+    QueryGenerationState,
+    ReflectionState,
+    WebSearchState,
+)
+from agent.configuration import Configuration
+from agent.prompts import (
+    get_current_date,
+    query_writer_instructions,
+    web_searcher_instructions,
+    reflection_instructions,
+    answer_instructions,
+)
+
+# 导入数据库研究模块
+from agent.db.database_research import database_research
+
+from agent.utils import (
+    get_research_topic,
+    insert_citation_markers,
+)
+
+load_dotenv()
+
+# 检查豆包API Key
+if os.getenv("ARK_API_KEY") is None:
+    raise ValueError("ARK_API_KEY is not set")
+
+
+def create_ark_client(timeout: int = 300) -> Ark:
+    """创建豆包客户端"""
+    return Ark(
+        api_key=os.getenv("ARK_API_KEY"),
+        timeout=timeout,
+    )
+
+
+def call_doubao_model(model_name: str, messages: list, temperature: float = 0.0, 
+                     structured_output_schema=None, timeout: int = 300):
+    """
+    调用豆包模型的通用函数
+    
+    Args:
+        model_name: 模型名称
+        messages: 消息列表
+        temperature: 温度参数
+        structured_output_schema: 结构化输出模式
+        timeout: 超时时间
+    """
+    client = create_ark_client(timeout=timeout)
+    
+    # 格式化消息
+    if isinstance(messages, str):
+        formatted_messages = [{"role": "user", "content": messages}]
+    else:
+        formatted_messages = messages
+    
+    # 对于深度思考模型，添加思考提示
+    if "thinking" in model_name and formatted_messages:
+        # 确保有思考过程输出
+        original_content = formatted_messages[-1]["content"]
+        formatted_messages[-1]["content"] = (
+            "任何输出都要有思考过程，输出内容必须以 \"<think>\\n\\n嗯\" 开头。"
+            "仔细揣摩用户意图，在思考过程之后，提供逻辑清晰且内容完整的回答。\\n\\n"
+            f"{original_content}"
+        )
+    
+    try:
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=formatted_messages,
+            temperature=temperature,
+        )
+        
+        # 处理结构化输出
+        if structured_output_schema:
+            content = response.choices[0].message.content
+            # 提取思考内容（如果存在）
+            reasoning_content = ""
+            if hasattr(response.choices[0].message, 'reasoning_content'):
+                reasoning_content = response.choices[0].message.reasoning_content
+            
+            # 尝试解析JSON
+            try:
+                # 如果内容包含思考过程，提取实际答案部分
+                if content.startswith("<think>"):
+                    # 找到思考过程结束的位置
+                    think_end = content.find("</think>")
+                    if think_end != -1:
+                        content = content[think_end + 8:].strip()
+                
+                # 尝试从内容中提取JSON
+                json_start = content.find("{")
+                json_end = content.rfind("}") + 1
+                if json_start != -1 and json_end > json_start:
+                    json_content = content[json_start:json_end]
+                    parsed_data = json.loads(json_content)
+                    return structured_output_schema(**parsed_data)
+                else:
+                    # 如果没找到JSON，尝试直接解析整个内容
+                    parsed_data = json.loads(content)
+                    return structured_output_schema(**parsed_data)
+            except json.JSONDecodeError:
+                # 如果JSON解析失败，返回错误信息
+                print(f"Failed to parse JSON from response: {content}")
+                raise ValueError(f"Invalid JSON response: {content}")
+        
+        return response
+        
+    except Exception as e:
+        print(f"Error calling Doubao model {model_name}: {e}")
+        raise
+
+
+# Nodes
+def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerationState:
+    """LangGraph node that generates a search queries based on the User's question."""
+    configurable = Configuration.from_runnable_config(config)
+
+    # check for custom initial search query count
+    if state.get("initial_search_query_count") is None:
+        state["initial_search_query_count"] = configurable.number_of_initial_queries
+
+    # Format the prompt
+    current_date = get_current_date()
+    formatted_prompt = query_writer_instructions.format(
+        current_date=current_date,
+        research_topic=get_research_topic(state["messages"]),
+        number_queries=state["initial_search_query_count"],
+    )
+    
+    # 使用常规模型生成查询，注重速度
+    result = call_doubao_model(
+        model_name=configurable.query_generator_model,
+        messages=formatted_prompt,
+        temperature=1.0,
+        structured_output_schema=SearchQueryList,
+        timeout=configurable.regular_model_timeout
+    )
+    
+    return {"query_list": result.query}
+
+
+def continue_to_web_research(state: QueryGenerationState):
+    """LangGraph node that sends the search queries to the web research node."""
+    return [
+        Send("web_research", {"search_query": search_query, "id": int(idx)})
+        for idx, search_query in enumerate(state["query_list"])
+    ]
+
+
+def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
+    """
+    LangGraph node that performs database research instead of web search.
+    
+    这个函数现在查询内部数据库而不是网络搜索。
+    """
+    try:
+        # 使用数据库研究模块
+        search_query = state["search_query"]
+        query_id = state["id"]
+        
+        print(f"执行数据库查询: {search_query}")
+        
+        # 调用数据库研究功能
+        research_result, citations = database_research(search_query, query_id)
+        
+        # 处理引用格式，使其兼容原有的引用系统
+        sources_gathered = []
+        modified_text = research_result
+        
+        for citation in citations:
+            # 创建兼容的source格式
+            source = {
+                "label": citation["label"],
+                "short_url": citation["short_url"],
+                "value": citation["value"]
+            }
+            sources_gathered.append(source)
+            
+            # 在文本中插入引用标记
+            citation_marker = f" [{citation['label']}]({citation['short_url']})"
+            modified_text += citation_marker
+        
+        print(f"数据库查询完成: {len(sources_gathered)} 个数据源")
+        
+        return {
+            "sources_gathered": sources_gathered,
+            "search_query": [search_query],
+            "web_research_result": [modified_text],
+        }
+    
+    except Exception as e:
+        print(f"数据库研究出错: {e}")
+        # 返回错误信息作为搜索结果
+        error_source = {
+            "label": f"查询错误{state['id']}",
+            "short_url": f"db://error_{state['id']}",
+            "value": f"数据库查询失败: {str(e)}"
+        }
+        
+        error_message = f"数据库查询遇到问题: {str(e)}\n\n可能的原因:\n1. 数据库连接问题\n2. 查询语句复杂度过高\n3. 权限限制\n\n请尝试重新表述您的问题。"
+        
+        return {
+            "sources_gathered": [error_source],
+            "search_query": [state["search_query"]],
+            "web_research_result": [error_message],
+        }
+
+
+def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
+    """LangGraph node that identifies knowledge gaps and generates potential follow-up queries."""
+    configurable = Configuration.from_runnable_config(config)
+    
+    # Increment the research loop count
+    state["research_loop_count"] = state.get("research_loop_count", 0) + 1
+
+    # Format the prompt - 针对数据库查询调整提示词
+    current_date = get_current_date()
+    
+    # 修改反思提示词，使其适合数据库查询场景
+    database_reflection_prompt = f"""你是一个专业的数据分析师，正在分析字节跳动人员主数据查询结果。
+
+当前日期: {current_date}
+
+研究主题: {get_research_topic(state["messages"])}
+
+已完成的数据查询结果:
+{chr(10).join(['---', chr(10), chr(10).join(state["web_research_result"]), '---'])}
+
+请分析这些查询结果是否足够回答用户的问题。考虑以下方面:
+
+1. 数据完整性: 是否需要查询更多相关的数据表或字段？
+2. 时间范围: 是否需要不同时间段的数据进行对比？
+3. 维度分析: 是否需要按不同维度（部门、职级、地区等）进行分析？
+4. 关联分析: 是否需要查询相关联的业务数据？
+5. 统计深度: 是否需要更深入的统计分析或趋势分析？
+
+输出格式（JSON）:
+{{
+    "is_sufficient": true或false - 当前数据是否足够回答用户问题,
+    "knowledge_gap": "如果不足够，描述缺少什么信息",
+    "follow_up_queries": ["如果需要更多数据，生成具体的后续查询问题"]
+}}"""
+    
+    # 使用深度思考模型进行反思，注重推理质量
+    result = call_doubao_model(
+        model_name=configurable.reflection_model,
+        messages=database_reflection_prompt,
+        temperature=1.0,
+        structured_output_schema=Reflection,
+        timeout=configurable.thinking_model_timeout
+    )
+
+    return {
+        "is_sufficient": result.is_sufficient,
+        "knowledge_gap": result.knowledge_gap,
+        "follow_up_queries": result.follow_up_queries,
+        "research_loop_count": state["research_loop_count"],
+        "number_of_ran_queries": len(state["search_query"]),
+    }
+
+
+def evaluate_research(
+    state: ReflectionState,
+    config: RunnableConfig,
+) -> OverallState:
+    """LangGraph routing function that determines the next step in the research flow."""
+    configurable = Configuration.from_runnable_config(config)
+    max_research_loops = (
+        state.get("max_research_loops")
+        if state.get("max_research_loops") is not None
+        else configurable.max_research_loops
+    )
+    
+    if state["is_sufficient"] or state["research_loop_count"] >= max_research_loops:
+        return "finalize_answer"
+    else:
+        return [
+            Send(
+                "web_research",
+                {
+                    "search_query": follow_up_query,
+                    "id": state["number_of_ran_queries"] + int(idx),
+                },
+            )
+            for idx, follow_up_query in enumerate(state["follow_up_queries"])
+        ]
+
+
+def finalize_answer(state: OverallState, config: RunnableConfig):
+    """LangGraph node that finalizes the research summary."""
+    configurable = Configuration.from_runnable_config(config)
+
+    # 针对数据库查询调整最终答案生成提示词
+    current_date = get_current_date()
+    
+    database_answer_prompt = f"""你是一个专业的数据分析师，需要基于字节跳动人员主数据的查询结果，为用户提供全面、准确的分析报告。
+
+当前日期: {current_date}
+
+用户问题: {get_research_topic(state["messages"])}
+
+数据查询结果:
+{chr(10).join(['---', chr(10), chr(10).join(state["web_research_result"]), '---'])}
+
+请生成一份专业的数据分析报告，包含以下内容:
+
+1. **执行摘要**: 简要概述主要发现和结论
+2. **数据分析**: 详细分析查询结果，包括关键数据和趋势
+3. **业务洞察**: 从数据中得出的业务见解和含义
+4. **建议**: 基于数据分析的具体建议或后续行动
+5. **数据来源**: 确保所有引用都正确标注
+
+要求:
+- 保持数据的准确性，只基于查询结果进行分析
+- 使用专业的数据分析语言
+- 突出关键发现和异常情况
+- 提供可操作的业务建议
+- 保持报告的逻辑性和可读性"""
+
+    # 使用深度思考模型生成最终答案，注重质量
+    response = call_doubao_model(
+        model_name=configurable.answer_model,
+        messages=database_answer_prompt,
+        temperature=0.0,
+        timeout=configurable.thinking_model_timeout
+    )
+    
+    result_content = response.choices[0].message.content
+    
+    # 打印思考过程（如果存在）
+    if hasattr(response.choices[0].message, 'reasoning_content'):
+        print("=== 深度思考过程 ===")
+        print(response.choices[0].message.reasoning_content)
+        print("=== 思考结束 ===")
+
+    # 处理引用替换
+    unique_sources = []
+    for source in state["sources_gathered"]:
+        if source["short_url"] in result_content:
+            result_content = result_content.replace(
+                source["short_url"], source["value"]
+            )
+            unique_sources.append(source)
+
+    return {
+        "messages": [AIMessage(content=result_content)],
+        "sources_gathered": unique_sources,
+    }
+
+
+# Create our Agent Graph
+builder = StateGraph(OverallState, config_schema=Configuration)
+
+# Define the nodes we will cycle between
+builder.add_node("generate_query", generate_query)
+builder.add_node("web_research", web_research)  # 现在是数据库研究
+builder.add_node("reflection", reflection)
+builder.add_node("finalize_answer", finalize_answer)
+
+# Set the entrypoint as `generate_query`
+builder.add_edge(START, "generate_query")
+# Add conditional edge to continue with search queries in a parallel branch
+builder.add_conditional_edges(
+    "generate_query", continue_to_web_research, ["web_research"]
+)
+# Reflect on the web research (now database research)
+builder.add_edge("web_research", "reflection")
+# Evaluate the research
+builder.add_conditional_edges(
+    "reflection", evaluate_research, ["web_research", "finalize_answer"]
+)
+# Finalize the answer
+builder.add_edge("finalize_answer", END)
+
+graph = builder.compile(name="database-research-agent")
+
+## 7. 完整的环境配置和设置指南
+# ================================
+# 豆包API配置
+# ================================
+# 豆包API Key - 必须配置
+ARK_API_KEY=your_ark_api_key_here
+
+# ================================
+# 模型配置
+# ================================
+# 查询生成模型（快速响应）
+QUERY_GENERATOR_MODEL=doubao-pro-256k-241115
+
+# 反思分析模型（深度思考）
+REFLECTION_MODEL=doubao-1.5-thinking-pro-250415
+
+# 最终答案生成模型（深度思考）
+ANSWER_MODEL=doubao-1.5-thinking-pro-250415
+
+# 网络搜索/数据库查询模型（快速响应）
+WEB_RESEARCH_MODEL=doubao-pro-256k-241115
+
+# ================================
+# 超时时间配置（秒）
+# ================================
+# 深度思考模型超时时间
+THINKING_MODEL_TIMEOUT=1800
+
+# 常规模型超时时间
+REGULAR_MODEL_TIMEOUT=300
+
+# ================================
+# 数据库配置
+# ================================
+# 数据库类型：mysql, postgresql, sqlserver
+DB_TYPE=mysql
+
+# 数据库连接信息
+DB_HOST=your_database_host
+DB_PORT=3306
+DB_NAME=bytedance_hr
+DB_USERNAME=your_username
+DB_PASSWORD=your_password
+
+# 连接池配置
+DB_POOL_SIZE=5
+DB_MAX_CONNECTIONS=20
+
+# 查询配置
+DB_QUERY_TIMEOUT=30
+DB_MAX_ROWS=10000
+
+# ================================
+# 开发和测试配置
+# ================================
+# 是否使用模拟数据库（开发/测试用）
+USE_MOCK_DB=false
+
+# 日志级别：DEBUG, INFO, WARNING, ERROR
+LOG_LEVEL=INFO
+
+# ================================
+# 研究配置
+# ================================
+# 初始查询数量
+NUMBER_OF_INITIAL_QUERIES=3
+
+# 最大研究循环次数
+MAX_RESEARCH_LOOPS=2
+
+# ================================
+# 前端配置
+# ================================
+# API基础URL（生产环境需要修改）
+API_BASE_URL=http://localhost:2024
+
+# ================================
+# 安全配置
+# ================================
+# 允许的查询操作（只允许SELECT）
+ALLOWED_SQL_OPERATIONS=SELECT
+
+# 最大查询时间限制（秒）
+MAX_QUERY_EXECUTION_TIME=60

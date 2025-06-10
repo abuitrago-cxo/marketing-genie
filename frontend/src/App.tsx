@@ -27,16 +27,22 @@ export default function App() {
     assistantId: "agent",
     messagesKey: "messages",
     onFinish: (event: any) => {
-      console.log(event);
+      console.log("🎉 Stream finished:", event);
     },
     onUpdateEvent: (event: any) => {
+      console.log("📨 Received event:", event);
       let processedEvent: ProcessedEvent | null = null;
-      if (event.generate_query) {
+      if (event.generate_query && event.generate_query !== null) {
+        console.log("🔍 generate_query event details:", event.generate_query);
+        const rawQueries = event.generate_query.query_list;
+        console.log("🔍 Raw queries:", rawQueries, "Type:", typeof rawQueries);
+        const queries = Array.isArray(rawQueries) ? rawQueries : [];
+        console.log("📝 Final queries array:", queries);
         processedEvent = {
           title: "Generating Search Queries",
-          data: event.generate_query.query_list.join(", "),
+          data: queries.length > 0 ? queries.join(", ") : "No queries generated",
         };
-      } else if (event.web_research) {
+      } else if (event.web_research && event.web_research !== null) {
         const sources = event.web_research.sources_gathered || [];
         const numSources = sources.length;
         const uniqueLabels = [
@@ -49,16 +55,18 @@ export default function App() {
             exampleLabels || "N/A"
           }.`,
         };
-      } else if (event.reflection) {
+      } else if (event.reflection && event.reflection !== null) {
+        console.log("🤔 reflection event details:", event.reflection);
+        const followUpQueries = event.reflection.follow_up_queries;
+        console.log("🔍 Follow-up queries:", followUpQueries, "Type:", typeof followUpQueries);
+        const safeQueries = Array.isArray(followUpQueries) ? followUpQueries : [];
         processedEvent = {
           title: "Reflection",
           data: event.reflection.is_sufficient
             ? "Search successful, generating final answer."
-            : `Need more information, searching for ${event.reflection.follow_up_queries.join(
-                ", "
-              )}`,
+            : `Need more information, searching for ${safeQueries.join(", ")}`,
         };
-      } else if (event.finalize_answer) {
+      } else if (event.finalize_answer && event.finalize_answer !== null) {
         processedEvent = {
           title: "Finalizing Answer",
           data: "Composing and presenting the final answer.",
@@ -75,6 +83,8 @@ export default function App() {
   });
 
   useEffect(() => {
+    console.log("💬 Messages updated:", thread.messages);
+    console.log("⏳ Is loading:", thread.isLoading);
     if (scrollAreaRef.current) {
       const scrollViewport = scrollAreaRef.current.querySelector(
         "[data-radix-scroll-area-viewport]"

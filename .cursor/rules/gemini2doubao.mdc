@@ -1,0 +1,864 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+根据您提供的豆包API文档和我之前的分析，以下是将项目从Gemini API替换为豆包API的详细步骤：
+
+## 1. 修改依赖项
+
+[project]
+name = "agent"
+version = "0.0.1"
+description = "Backend for the LangGraph agent"
+authors = [
+    { name = "Philipp Schmid", email = "schmidphilipp1995@gmail.com" },
+]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "langgraph>=0.2.6",
+    "langchain>=0.3.19",
+    # 移除 langchain-google-genai，添加豆包SDK
+    # "langchain-google-genai",
+    "volcengine-python-sdk[ark]>=1.0.0",
+    "python-dotenv>=1.0.1",
+    "langgraph-sdk>=0.1.57",
+    "langgraph-cli",
+    "langgraph-api",
+    "fastapi",
+    # 移除 google-genai
+    # "google-genai",
+]
+
+[project.optional-dependencies]
+dev = ["mypy>=1.11.1", "ruff>=0.6.1"]
+
+[build-system]
+requires = ["setuptools>=73.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+lint.select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "D",    # pydocstyle
+    "D401", # First line should be in imperative mood
+    "T201",
+    "UP",
+]
+lint.ignore = [
+    "UP006",
+    "UP007",
+    # We actually do want to import from typing_extensions
+    "UP035",
+    # Relax the convention by _not_ requiring documentation for every function parameter.
+    "D417",
+    "E501",
+]
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D", "UP"]
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[dependency-groups]
+dev = [
+    "langgraph-cli[inmem]>=0.1.71",
+    "pytest>=8.3.5",
+]
+
+## 2. 修改配置文件
+
+import os
+from pydantic import BaseModel, Field
+from typing import Any, Optional
+
+from langchain_core.runnables import RunnableConfig
+
+
+class Configuration(BaseModel):
+    """The configuration for the agent."""
+
+    # 查询生成模型 - 使用常规模型，注重速度
+    query_generator_model: str = Field(
+        default="doubao-pro-256k-241115",
+        metadata={
+            "description": "The name of the language model to use for the agent's query generation."
+        },
+    )
+
+    # 反思模型 - 使用深度思考模型，注重推理质量
+    reflection_model: str = Field(
+        default="doubao-1.5-thinking-pro-250415",
+        metadata={
+            "description": "The name of the language model to use for the agent's reflection."
+        },
+    )
+
+    # 答案生成模型 - 使用深度思考模型，注重最终质量
+    answer_model: str = Field(
+        default="doubao-1.5-thinking-pro-250415",
+        metadata={
+            "description": "The name of the language model to use for the agent's answer."
+        },
+    )
+
+    # 网络搜索模型 - 使用常规模型，注重信息提取速度
+    web_research_model: str = Field(
+        default="doubao-pro-256k-241115",
+        metadata={
+            "description": "The name of the language model to use for web research."
+        },
+    )
+
+    number_of_initial_queries: int = Field(
+        default=3,
+        metadata={"description": "The number of initial search queries to generate."},
+    )
+
+    max_research_loops: int = Field(
+        default=2,
+        metadata={"description": "The maximum number of research loops to perform."},
+    )
+
+    # 深度思考模型的超时时间设置
+    thinking_model_timeout: int = Field(
+        default=1800,  # 30分钟
+        metadata={"description": "Timeout in seconds for thinking models."},
+    )
+
+    # 常规模型的超时时间设置
+    regular_model_timeout: int = Field(
+        default=300,   # 5分钟
+        metadata={"description": "Timeout in seconds for regular models."},
+    )
+
+    @classmethod
+    def from_runnable_config(
+        cls, config: Optional[RunnableConfig] = None
+    ) -> "Configuration":
+        """Create a Configuration instance from a RunnableConfig."""
+        configurable = (
+            config["configurable"] if config and "configurable" in config else {}
+        )
+
+        # Get raw values from environment or config
+        raw_values: dict[str, Any] = {
+            name: os.environ.get(name.upper(), configurable.get(name))
+            for name in cls.model_fields.keys()
+        }
+
+        # Filter out None values
+        values = {k: v for k, v in raw_values.items() if v is not None}
+
+        return cls(**values)
+
+## 3. 修改主要的图形文件
+
+import os
+import json
+
+from agent.tools_and_schemas import SearchQueryList, Reflection
+from dotenv import load_dotenv
+from langchain_core.messages import AIMessage
+from langgraph.types import Send
+from langgraph.graph import StateGraph
+from langgraph.graph import START, END
+from langchain_core.runnables import RunnableConfig
+# 替换为豆包SDK
+from volcenginesdkarkruntime import Ark
+
+from agent.state import (
+    OverallState,
+    QueryGenerationState,
+    ReflectionState,
+    WebSearchState,
+)
+from agent.configuration import Configuration
+from agent.prompts import (
+    get_current_date,
+    query_writer_instructions,
+    web_searcher_instructions,
+    reflection_instructions,
+    answer_instructions,
+)
+from agent.utils import (
+    get_citations,
+    get_research_topic,
+    insert_citation_markers,
+    resolve_urls,
+)
+
+load_dotenv()
+
+# 检查豆包API Key
+if os.getenv("ARK_API_KEY") is None:
+    raise ValueError("ARK_API_KEY is not set")
+
+
+def create_ark_client(timeout: int = 300) -> Ark:
+    """创建豆包客户端"""
+    return Ark(
+        api_key=os.getenv("ARK_API_KEY"),
+        timeout=timeout,
+    )
+
+
+def call_doubao_model(model_name: str, messages: list, temperature: float = 0.0, 
+                     structured_output_schema=None, timeout: int = 300):
+    """
+    调用豆包模型的通用函数
+    
+    Args:
+        model_name: 模型名称
+        messages: 消息列表
+        temperature: 温度参数
+        structured_output_schema: 结构化输出模式
+        timeout: 超时时间
+    """
+    client = create_ark_client(timeout=timeout)
+    
+    # 格式化消息
+    if isinstance(messages, str):
+        formatted_messages = [{"role": "user", "content": messages}]
+    else:
+        formatted_messages = messages
+    
+    # 对于深度思考模型，添加思考提示
+    if "thinking" in model_name and formatted_messages:
+        # 确保有思考过程输出
+        original_content = formatted_messages[-1]["content"]
+        formatted_messages[-1]["content"] = (
+            "任何输出都要有思考过程，输出内容必须以 \"<think>\\n\\n嗯\" 开头。"
+            "仔细揣摩用户意图，在思考过程之后，提供逻辑清晰且内容完整的回答。\\n\\n"
+            f"{original_content}"
+        )
+    
+    try:
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=formatted_messages,
+            temperature=temperature,
+        )
+        
+        # 处理结构化输出
+        if structured_output_schema:
+            content = response.choices[0].message.content
+            # 提取思考内容（如果存在）
+            reasoning_content = ""
+            if hasattr(response.choices[0].message, 'reasoning_content'):
+                reasoning_content = response.choices[0].message.reasoning_content
+            
+            # 尝试解析JSON
+            try:
+                # 如果内容包含思考过程，提取实际答案部分
+                if content.startswith("<think>"):
+                    # 找到思考过程结束的位置
+                    think_end = content.find("</think>")
+                    if think_end != -1:
+                        content = content[think_end + 8:].strip()
+                
+                # 尝试从内容中提取JSON
+                json_start = content.find("{")
+                json_end = content.rfind("}") + 1
+                if json_start != -1 and json_end > json_start:
+                    json_content = content[json_start:json_end]
+                    parsed_data = json.loads(json_content)
+                    return structured_output_schema(**parsed_data)
+                else:
+                    # 如果没找到JSON，尝试直接解析整个内容
+                    parsed_data = json.loads(content)
+                    return structured_output_schema(**parsed_data)
+            except json.JSONDecodeError:
+                # 如果JSON解析失败，返回错误信息
+                print(f"Failed to parse JSON from response: {content}")
+                raise ValueError(f"Invalid JSON response: {content}")
+        
+        return response
+        
+    except Exception as e:
+        print(f"Error calling Doubao model {model_name}: {e}")
+        raise
+
+
+# Nodes
+def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerationState:
+    """LangGraph node that generates a search queries based on the User's question."""
+    configurable = Configuration.from_runnable_config(config)
+
+    # check for custom initial search query count
+    if state.get("initial_search_query_count") is None:
+        state["initial_search_query_count"] = configurable.number_of_initial_queries
+
+    # Format the prompt
+    current_date = get_current_date()
+    formatted_prompt = query_writer_instructions.format(
+        current_date=current_date,
+        research_topic=get_research_topic(state["messages"]),
+        number_queries=state["initial_search_query_count"],
+    )
+    
+    # 使用常规模型生成查询，注重速度
+    result = call_doubao_model(
+        model_name=configurable.query_generator_model,
+        messages=formatted_prompt,
+        temperature=1.0,
+        structured_output_schema=SearchQueryList,
+        timeout=configurable.regular_model_timeout
+    )
+    
+    return {"query_list": result.query}
+
+
+def continue_to_web_research(state: QueryGenerationState):
+    """LangGraph node that sends the search queries to the web research node."""
+    return [
+        Send("web_research", {"search_query": search_query, "id": int(idx)})
+        for idx, search_query in enumerate(state["query_list"])
+    ]
+
+
+def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
+    """LangGraph node that performs web research using Google Search API."""
+    configurable = Configuration.from_runnable_config(config)
+    
+    formatted_prompt = web_searcher_instructions.format(
+        current_date=get_current_date(),
+        research_topic=state["search_query"],
+    )
+
+    # 注意：这里需要实现实际的搜索功能
+    # 原代码使用Google Search API，您需要替换为您的搜索实现
+    # 这里提供一个基础框架
+    
+    try:
+        # 使用常规模型处理搜索结果，注重速度
+        response = call_doubao_model(
+            model_name=configurable.web_research_model,
+            messages=formatted_prompt,
+            temperature=0.0,
+            timeout=configurable.regular_model_timeout
+        )
+        
+        # 这里需要实现实际的搜索逻辑和引用处理
+        # 暂时返回模拟数据
+        search_result = response.choices[0].message.content
+        
+        # 创建模拟的引用数据
+        citations = [{
+            "start_index": 0,
+            "end_index": len(search_result),
+            "segments": [{
+                "label": f"Search Result {state['id']}",
+                "short_url": f"https://example.com/result-{state['id']}",
+                "value": f"https://example.com/full-result-{state['id']}"
+            }]
+        }]
+        
+        modified_text = insert_citation_markers(search_result, citations)
+        sources_gathered = [item for citation in citations for item in citation["segments"]]
+
+        return {
+            "sources_gathered": sources_gathered,
+            "search_query": [state["search_query"]],
+            "web_research_result": [modified_text],
+        }
+    
+    except Exception as e:
+        print(f"Error in web research: {e}")
+        # 返回错误信息作为搜索结果
+        return {
+            "sources_gathered": [],
+            "search_query": [state["search_query"]],
+            "web_research_result": [f"搜索出错: {str(e)}"],
+        }
+
+
+def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
+    """LangGraph node that identifies knowledge gaps and generates potential follow-up queries."""
+    configurable = Configuration.from_runnable_config(config)
+    
+    # Increment the research loop count
+    state["research_loop_count"] = state.get("research_loop_count", 0) + 1
+
+    # Format the prompt
+    current_date = get_current_date()
+    formatted_prompt = reflection_instructions.format(
+        current_date=current_date,
+        research_topic=get_research_topic(state["messages"]),
+        summaries="\n\n---\n\n".join(state["web_research_result"]),
+    )
+    
+    # 使用深度思考模型进行反思，注重推理质量
+    result = call_doubao_model(
+        model_name=configurable.reflection_model,
+        messages=formatted_prompt,
+        temperature=1.0,
+        structured_output_schema=Reflection,
+        timeout=configurable.thinking_model_timeout
+    )
+
+    return {
+        "is_sufficient": result.is_sufficient,
+        "knowledge_gap": result.knowledge_gap,
+        "follow_up_queries": result.follow_up_queries,
+        "research_loop_count": state["research_loop_count"],
+        "number_of_ran_queries": len(state["search_query"]),
+    }
+
+
+def evaluate_research(
+    state: ReflectionState,
+    config: RunnableConfig,
+) -> OverallState:
+    """LangGraph routing function that determines the next step in the research flow."""
+    configurable = Configuration.from_runnable_config(config)
+    max_research_loops = (
+        state.get("max_research_loops")
+        if state.get("max_research_loops") is not None
+        else configurable.max_research_loops
+    )
+    
+    if state["is_sufficient"] or state["research_loop_count"] >= max_research_loops:
+        return "finalize_answer"
+    else:
+        return [
+            Send(
+                "web_research",
+                {
+                    "search_query": follow_up_query,
+                    "id": state["number_of_ran_queries"] + int(idx),
+                },
+            )
+            for idx, follow_up_query in enumerate(state["follow_up_queries"])
+        ]
+
+
+def finalize_answer(state: OverallState, config: RunnableConfig):
+    """LangGraph node that finalizes the research summary."""
+    configurable = Configuration.from_runnable_config(config)
+
+    # Format the prompt
+    current_date = get_current_date()
+    formatted_prompt = answer_instructions.format(
+        current_date=current_date,
+        research_topic=get_research_topic(state["messages"]),
+        summaries="\n---\n\n".join(state["web_research_result"]),
+    )
+
+    # 使用深度思考模型生成最终答案，注重质量
+    response = call_doubao_model(
+        model_name=configurable.answer_model,
+        messages=formatted_prompt,
+        temperature=0.0,
+        timeout=configurable.thinking_model_timeout
+    )
+    
+    result_content = response.choices[0].message.content
+    
+    # 打印思考过程（如果存在）
+    if hasattr(response.choices[0].message, 'reasoning_content'):
+        print("=== 思考过程 ===")
+        print(response.choices[0].message.reasoning_content)
+        print("=== 思考结束 ===")
+
+    # 处理引用替换
+    unique_sources = []
+    for source in state["sources_gathered"]:
+        if source["short_url"] in result_content:
+            result_content = result_content.replace(
+                source["short_url"], source["value"]
+            )
+            unique_sources.append(source)
+
+    return {
+        "messages": [AIMessage(content=result_content)],
+        "sources_gathered": unique_sources,
+    }
+
+
+# Create our Agent Graph
+builder = StateGraph(OverallState, config_schema=Configuration)
+
+# Define the nodes we will cycle between
+builder.add_node("generate_query", generate_query)
+builder.add_node("web_research", web_research)
+builder.add_node("reflection", reflection)
+builder.add_node("finalize_answer", finalize_answer)
+
+# Set the entrypoint as `generate_query`
+builder.add_edge(START, "generate_query")
+# Add conditional edge to continue with search queries in a parallel branch
+builder.add_conditional_edges(
+    "generate_query", continue_to_web_research, ["web_research"]
+)
+# Reflect on the web research
+builder.add_edge("web_research", "reflection")
+# Evaluate the research
+builder.add_conditional_edges(
+    "reflection", evaluate_research, ["web_research", "finalize_answer"]
+)
+# Finalize the answer
+builder.add_edge("finalize_answer", END)
+
+graph = builder.compile(name="pro-search-agent")
+
+## 4. 修改环境变量配置
+
+# 豆包API Key - 替换原来的GEMINI_API_KEY
+ARK_API_KEY=
+
+# 可选：模型配置
+# QUERY_GENERATOR_MODEL=doubao-pro-256k-241115
+# REFLECTION_MODEL=doubao-1.5-thinking-pro-250415
+# ANSWER_MODEL=doubao-1.5-thinking-pro-250415
+# WEB_RESEARCH_MODEL=doubao-pro-256k-241115
+
+# 可选：超时时间配置（秒）
+# THINKING_MODEL_TIMEOUT=1800
+# REGULAR_MODEL_TIMEOUT=300
+
+## 5. 修改前端模型选择
+
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { SquarePen, Brain, Send, StopCircle, Zap, Cpu } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+// Updated InputFormProps
+interface InputFormProps {
+  onSubmit: (inputValue: string, effort: string, model: string) => void;
+  onCancel: () => void;
+  isLoading: boolean;
+  hasHistory: boolean;
+}
+
+export const InputForm: React.FC<InputFormProps> = ({
+  onSubmit,
+  onCancel,
+  isLoading,
+  hasHistory,
+}) => {
+  const [internalInputValue, setInternalInputValue] = useState("");
+  const [effort, setEffort] = useState("medium");
+  // 默认使用深度思考模型
+  const [model, setModel] = useState("doubao-1.5-thinking-pro-250415");
+
+  const handleInternalSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!internalInputValue.trim()) return;
+    onSubmit(internalInputValue, effort, model);
+    setInternalInputValue("");
+  };
+
+  const handleInternalKeyDown = (
+    e: React.KeyboardEvent<HTMLTextAreaElement>
+  ) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleInternalSubmit();
+    }
+  };
+
+  const isSubmitDisabled = !internalInputValue.trim() || isLoading;
+
+  return (
+    <form
+      onSubmit={handleInternalSubmit}
+      className={`flex flex-col gap-2 p-3 `}
+    >
+      <div
+        className={`flex flex-row items-center justify-between text-white rounded-3xl rounded-bl-sm ${
+          hasHistory ? "rounded-br-sm" : ""
+        } break-words min-h-7 bg-neutral-700 px-4 pt-3 `}
+      >
+        <Textarea
+          value={internalInputValue}
+          onChange={(e) => setInternalInputValue(e.target.value)}
+          onKeyDown={handleInternalKeyDown}
+          placeholder="Who won the Euro 2024 and scored the most goals?"
+          className={`w-full text-neutral-100 placeholder-neutral-500 resize-none border-0 focus:outline-none focus:ring-0 outline-none focus-visible:ring-0 shadow-none 
+                        md:text-base  min-h-[56px] max-h-[200px]`}
+          rows={1}
+        />
+        <div className="-mt-3">
+          {isLoading ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 cursor-pointer rounded-full transition-all duration-200"
+              onClick={onCancel}
+            >
+              <StopCircle className="h-5 w-5" />
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              variant="ghost"
+              className={`${
+                isSubmitDisabled
+                  ? "text-neutral-500"
+                  : "text-blue-500 hover:text-blue-400 hover:bg-blue-500/10"
+              } p-2 cursor-pointer rounded-full transition-all duration-200 text-base`}
+              disabled={isSubmitDisabled}
+            >
+              Search
+              <Send className="h-5 w-5" />
+            </Button>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="flex flex-row gap-2">
+          <div className="flex flex-row gap-2 bg-neutral-700 border-neutral-600 text-neutral-300 focus:ring-neutral-500 rounded-xl rounded-t-sm pl-2  max-w-[100%] sm:max-w-[90%]">
+            <div className="flex flex-row items-center text-sm">
+              <Brain className="h-4 w-4 mr-2" />
+              Effort
+            </div>
+            <Select value={effort} onValueChange={setEffort}>
+              <SelectTrigger className="w-[120px] bg-transparent border-none cursor-pointer">
+                <SelectValue placeholder="Effort" />
+              </SelectTrigger>
+              <SelectContent className="bg-neutral-700 border-neutral-600 text-neutral-300 cursor-pointer">
+                <SelectItem
+                  value="low"
+                  className="hover:bg-neutral-600 focus:bg-neutral-600 cursor-pointer"
+                >
+                  Low
+                </SelectItem>
+                <SelectItem
+                  value="medium"
+                  className="hover:bg-neutral-600 focus:bg-neutral-600 cursor-pointer"
+                >
+                  Medium
+                </SelectItem>
+                <SelectItem
+                  value="high"
+                  className="hover:bg-neutral-600 focus:bg-neutral-600 cursor-pointer"
+                >
+                  High
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-row gap-2 bg-neutral-700 border-neutral-600 text-neutral-300 focus:ring-neutral-500 rounded-xl rounded-t-sm pl-2  max-w-[100%] sm:max-w-[90%]">
+            <div className="flex flex-row items-center text-sm ml-2">
+              <Cpu className="h-4 w-4 mr-2" />
+              Model
+            </div>
+            <Select value={model} onValueChange={setModel}>
+              <SelectTrigger className="w-[180px] bg-transparent border-none cursor-pointer">
+                <SelectValue placeholder="Model" />
+              </SelectTrigger>
+              <SelectContent className="bg-neutral-700 border-neutral-600 text-neutral-300 cursor-pointer">
+                <SelectItem
+                  value="doubao-pro-256k-241115"
+                  className="hover:bg-neutral-600 focus:bg-neutral-600 cursor-pointer"
+                >
+                  <div className="flex items-center">
+                    <Zap className="h-4 w-4 mr-2 text-yellow-400" /> 
+                    Doubao Pro 256K
+                  </div>
+                </SelectItem>
+                <SelectItem
+                  value="doubao-1.5-thinking-pro-250415"
+                  className="hover:bg-neutral-600 focus:bg-neutral-600 cursor-pointer"
+                >
+                  <div className="flex items-center">
+                    <Brain className="h-4 w-4 mr-2 text-purple-400" /> 
+                    Doubao Thinking Pro
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {hasHistory && (
+          <Button
+            className="bg-neutral-700 border-neutral-600 text-neutral-300 cursor-pointer rounded-xl rounded-t-sm pl-2 "
+            variant="default"
+            onClick={() => window.location.reload()}
+          >
+            <SquarePen size={16} />
+            New Search
+          </Button>
+        )}
+      </div>
+    </form>
+  );
+};
+
+## 6. 安装和设置指南
+
+# 豆包API替换设置指南
+
+## 📋 替换步骤
+
+### 1. 安装依赖
+```bash
+cd backend
+pip uninstall langchain-google-genai google-genai
+pip install -U 'volcengine-python-sdk[ark]'
+```
+
+### 2. 环境变量配置
+在 `backend/.env` 文件中：
+```bash
+# 移除
+# GEMINI_API_KEY=your_gemini_key
+
+# 添加
+ARK_API_KEY=your_ark_api_key
+```
+
+### 3. 替换文件
+将以下文件替换为修改后的版本：
+- `backend/pyproject.toml`
+- `backend/src/agent/configuration.py`
+- `backend/src/agent/graph.py`
+- `backend/.env.example`
+- `frontend/src/components/InputForm.tsx`
+
+### 4. 重新安装后端依赖
+```bash
+cd backend
+pip install -e .
+```
+
+### 5. 重新安装前端依赖（如需要）
+```bash
+cd frontend
+npm install
+```
+
+## 🔧 模型策略配置
+
+### 智能模型分配策略
+项目现在使用混合模型策略：
+
+#### 🚀 **快速响应节点** (使用 `doubao-pro-256k-241115`)
+- **generate_query**: 查询生成
+- **web_research**: 网络搜索和信息提取
+
+#### 🧠 **深度思考节点** (使用 `doubao-1.5-thinking-pro-250415`)
+- **reflection**: 反思分析和知识空缺识别
+- **finalize_answer**: 最终答案生成
+
+### 为什么这样设计？
+
+1. **性能优化**: 在简单任务上使用快速模型，复杂推理时使用深度思考模型
+2. **成本控制**: 避免在所有节点都使用昂贵的深度思考模型
+3. **质量保证**: 在关键决策点使用最佳推理能力
+4. **用户体验**: 平衡响应速度和答案质量
+
+## 🎯 深度思考模型的特殊功能
+
+### 思维链输出
+深度思考模型会输出详细的思考过程：
+```python
+if hasattr(response.choices[0].message, 'reasoning_content'):
+    print("=== 思考过程 ===")
+    print(response.choices[0].message.reasoning_content)
+    print("=== 思考结束 ===")
+```
+
+### 超时时间设置
+- 深度思考模型：30分钟 (1800秒)
+- 常规模型：5分钟 (300秒)
+
+### 提示词优化
+对于深度思考模型，系统会自动添加思考引导：
+```
+任何输出都要有思考过程，输出内容必须以 "<think>\n\n嗯" 开头。
+仔细揣摩用户意图，在思考过程之后，提供逻辑清晰且内容完整的回答。
+```
+
+## 🚨 注意事项
+
+### 1. 网络搜索功能需要实现
+当前代码中的 `web_research` 函数需要您实现实际的搜索API调用：
+```python
+# 您需要替换这部分为实际的搜索实现
+# 可以使用Google Search API、Bing Search API或其他搜索服务
+```
+
+### 2. 错误处理
+代码包含了完善的错误处理机制，确保在API调用失败时能够优雅降级。
+
+### 3. 流式输出支持
+如果需要流式输出，可以在 `call_doubao_model` 函数中添加 `stream=True` 参数。
+
+### 4. 模型选择灵活性
+前端界面允许用户在两种模型间切换：
+- Doubao Pro 256K (快速模型)
+- Doubao Thinking Pro (深度思考模型)
+
+## 🔄 测试验证
+
+### 1. 启动开发服务器
+```bash
+# 后端
+cd backend
+langgraph dev
+
+# 前端
+cd frontend
+npm run dev
+```
+
+### 2. 验证要点
+- [ ] API Key 正确配置
+- [ ] 模型调用成功
+- [ ] 深度思考模型输出思维链
+- [ ] 前端模型选择器工作正常
+- [ ] 错误处理机制正常
+
+## 📊 性能对比
+
+| 节点 | 原Gemini模型 | 新豆包模型 | 选择理由 |
+|------|-------------|-----------|----------|
+| generate_query | gemini-2.0-flash | doubao-pro-256k | 速度优先 |
+| web_research | gemini-2.0-flash | doubao-pro-256k | 速度优先 |
+| reflection | gemini-2.5-flash | doubao-thinking-pro | 推理质量 |
+| finalize_answer | gemini-2.5-pro | doubao-thinking-pro | 最终质量 |
+
+这种配置既保证了研究质量，又优化了响应速度和成本效率。
+
+## 总结
+
+我为您提供了完整的豆包API替换方案，采用**智能混合策略**：
+
+### 🎯 **核心策略**
+- **快速节点**：使用 `doubao-pro-256k-241115` （查询生成、信息提取）
+- **深度节点**：使用 `doubao-1.5-thinking-pro-250415` （反思分析、最终答案）
+
+### 🔧 **主要修改**
+1. **依赖替换**：`langchain-google-genai` → `volcengine-python-sdk[ark]`
+2. **环境变量**：`GEMINI_API_KEY` → `ARK_API_KEY`
+3. **模型调用**：创建统一的豆包客户端函数
+4. **深度思考支持**：处理 `reasoning_content` 输出
+5. **前端适配**：新增豆包模型选择器
+
+### 💡 **为什么选择混合策略？**
+
+1. **性能优化** - 简单任务用快速模型，复杂推理用深度思考
+2. **成本控制** - 避免所有环节都用昂贵的深度思考模型  
+3. **质量保证** - 关键决策点使用最强推理能力
+4. **用户体验** - 平衡响应速度与答案质量
+
+### 🚀 **关键优势**
+- **reflection节点**：深度分析知识空缺，决策更准确
+- **finalize_answer节点**：深度整合信息，答案更全面
+- **其他节点**：快速响应，提升整体效率
+
+按照提供的设置指南操作，您就能成功将项目从Gemini切换到豆包，并获得更好的推理质量和成本效率！
