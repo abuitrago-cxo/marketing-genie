@@ -1,0 +1,606 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+这是一个非常聪明的想法！Vanna确实是一个专门为SQL生成优化的成熟框架，而且从架构角度来看，它非常适合直接替换我们的web_search模块。让我来详细分析为什么这是一个更好的选择，以及如何具体实现。
+
+## 为什么Vanna是更好的选择
+
+让我用一个比喻来解释这个决策的智慧性。我们原来的方案就像是自己从零开始制造一辆汽车的发动机，而Vanna就像是一个已经经过无数次测试和优化的成熟发动机。我们为什么要重新发明轮子呢？
+
+**Vanna的核心优势：**
+
+**专业性：** Vanna是专门为自然语言到SQL转换而设计的，它的RAG机制经过了大量的实际项目验证，肯定比我们手工编写的prompt更加robust和准确。
+
+**自学习能力：** 这是最吸引人的特性。Vanna可以通过你的DDL语句、业务文档、历史SQL查询来不断学习和改进，就像一个越来越了解你业务的专家助手。
+
+**生态完整性：** 从自然语言理解到SQL生成、执行、结果格式化，Vanna提供了完整的pipeline，这意味着更少的集成工作和更好的兼容性。
+
+## 如何将Vanna集成到现有架构
+
+现在让我教你如何优雅地将Vanna集成到你的系统中。整体思路是保持现有的LangGraph流程，但是用Vanna来替换web_research节点的实现。
+
+### 第一步：安装和配置Vanna
+
+首先我们需要安装Vanna并配置它使用豆包模型：
+
+```bash
+# 在backend目录下安装Vanna
+pip install vanna
+```
+
+**backend/src/agent/vanna_doubao.py**
+```python
+"""
+自定义Vanna实现，集成豆包模型
+这个类就像是在Vanna的架构基础上，安装我们自己的豆包引擎
+"""
+
+import os
+from typing import List, Dict, Any, Optional
+from vanna.base import VannaBase
+from vanna.chromadb import ChromaDB_VectorStore
+from volcenginesdkarkruntime import Ark
+import json
+
+class DoubaoVanna(ChromaDB_VectorStore, VannaBase):
+    """
+    继承Vanna的基础能力，使用豆包作为LLM，ChromaDB作为向量存储
+    这就像是把豆包的大脑装进Vanna的身体里
+    """
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        # 初始化向量数据库
+        ChromaDB_VectorStore.__init__(self, config=config)
+        VannaBase.__init__(self, config=config)
+        
+        # 配置豆包客户端
+        self.ark_client = Ark(
+            api_key=os.getenv("ARK_API_KEY"),
+            timeout=config.get('timeout', 300) if config else 300
+        )
+        
+        # 配置使用的豆包模型
+        self.model_name = config.get('model', 'doubao-pro-256k-241115') if config else 'doubao-pro-256k-241115'
+        
+        print(f"✅ Vanna初始化完成，使用模型: {self.model_name}")
+    
+    def system_message(self, message: str) -> dict:
+        """定义系统消息格式"""
+        return {"role": "system", "content": message}
+
+    def user_message(self, message: str) -> dict:
+        """定义用户消息格式"""
+        return {"role": "user", "content": message}
+
+    def assistant_message(self, message: str) -> dict:
+        """定义助手消息格式"""
+        return {"role": "assistant", "content": message}
+
+    def submit_prompt(self, prompt: List[Dict], **kwargs) -> str:
+        """
+        使用豆包模型处理prompt
+        这是Vanna调用LLM的核心接口，我们用豆包来实现
+        """
+        try:
+            print("🤖 [Vanna-豆包] 正在处理SQL生成请求...")
+            
+            # 调用豆包API
+            response = self.ark_client.chat.completions.create(
+                model=self.model_name,
+                messages=prompt,
+                temperature=kwargs.get('temperature', 0.0),
+                max_tokens=kwargs.get('max_tokens', 2000)
+            )
+            
+            result = response.choices[0].message.content
+            print(f"✅ [Vanna-豆包] SQL生成完成，响应长度: {len(result)}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ [Vanna-豆包] API调用失败: {e}")
+            raise
+
+    def generate_sql(self, question: str, **kwargs) -> str:
+        """
+        重写SQL生成方法，添加更多的中文和业务逻辑优化
+        """
+        # 构建更适合中文HR查询的prompt
+        enhanced_question = self._enhance_question_for_hr_context(question)
+        
+        # 调用父类的生成方法
+        sql = super().generate_sql(enhanced_question, **kwargs)
+        
+        # 后处理SQL以确保适配我们的数据库
+        validated_sql = self._validate_and_clean_sql(sql)
+        
+        return validated_sql
+    
+    def _enhance_question_for_hr_context(self, question: str) -> str:
+        """
+        为HR业务场景增强问题描述
+        这就像给问题添加更多的上下文信息，帮助模型更好地理解
+        """
+        enhanced = f"""
+        这是一个关于字节跳动人力资源数据的查询问题。
+        
+        业务背景：
+        - 这是一个人员主数据系统，包含员工基本信息、考勤、薪资等数据
+        - 所有货币金额都以人民币为单位
+        - 日期格式统一为YYYY-MM-DD
+        - 员工状态包括：active(在职)、inactive(离职)
+        
+        用户问题：{question}
+        
+        请生成准确的SQL查询来回答这个问题。
+        """
+        return enhanced
+    
+    def _validate_and_clean_sql(self, sql: str) -> str:
+        """
+        验证和清理生成的SQL
+        这是一个安全检查机制，确保SQL的质量和安全性
+        """
+        if not sql or not sql.strip():
+            raise ValueError("生成的SQL为空")
+        
+        sql = sql.strip()
+        
+        # 移除可能的markdown格式
+        if sql.startswith('```sql'):
+            sql = sql[6:]
+        if sql.endswith('```'):
+            sql = sql[:-3]
+        
+        sql = sql.strip()
+        
+        # 基本的安全检查
+        dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
+        sql_upper = sql.upper()
+        
+        for keyword in dangerous_keywords:
+            if keyword in sql_upper:
+                raise ValueError(f"SQL包含危险操作: {keyword}")
+        
+        if not sql_upper.startswith('SELECT'):
+            raise ValueError("只允许SELECT查询")
+        
+        return sql
+
+# 工厂函数，方便创建Vanna实例
+def create_hr_vanna(config: Dict[str, Any] = None) -> DoubaoVanna:
+    """
+    创建HR专用的Vanna实例
+    这个函数就像是一个专门的工厂，生产适合HR业务的Vanna实例
+    """
+    default_config = {
+        'model': 'doubao-pro-256k-241115',
+        'timeout': 300,
+        'path': './vanna_chromadb',  # ChromaDB数据存储路径
+    }
+    
+    if config:
+        default_config.update(config)
+    
+    return DoubaoVanna(config=default_config)
+```
+
+### 第二步：训练Vanna模型
+
+现在我们需要训练Vanna，让它学习我们的数据库schema和业务逻辑：
+
+**backend/src/agent/vanna_trainer.py**
+```python
+"""
+Vanna训练脚本
+这个模块负责教会Vanna理解我们的数据库结构和业务逻辑
+"""
+
+from pathlib import Path
+from agent.vanna_doubao import create_hr_vanna
+from agent.schema_loader import load_database_schema
+import json
+
+def train_vanna_with_hr_data():
+    """
+    使用HR数据训练Vanna模型
+    这个过程就像是给一个新员工进行入职培训，教会他我们的业务知识
+    """
+    
+    print("🎓 开始训练Vanna模型...")
+    
+    # 创建Vanna实例
+    vn = create_hr_vanna()
+    
+    # 步骤1: 训练DDL（数据库结构）
+    print("📚 第一步：学习数据库结构...")
+    train_ddl(vn)
+    
+    # 步骤2: 训练业务文档
+    print("📖 第二步：学习业务知识...")
+    train_documentation(vn)
+    
+    # 步骤3: 训练SQL样例
+    print("💻 第三步：学习查询样例...")
+    train_sql_examples(vn)
+    
+    print("🎉 Vanna训练完成！")
+    return vn
+
+def train_ddl(vn):
+    """训练数据库结构信息"""
+    
+    # 加载完整的schema
+    schema_content = load_database_schema()
+    
+    # 将大的schema分解为单独的表进行训练
+    # 这样可以让Vanna更好地理解每个表的作用
+    
+    # 员工基本信息表
+    employee_ddl = """
+    CREATE TABLE employees (
+        employee_id VARCHAR(20) PRIMARY KEY COMMENT '员工ID',
+        name VARCHAR(100) NOT NULL COMMENT '姓名',
+        department_id VARCHAR(20) COMMENT '部门ID',
+        position VARCHAR(100) COMMENT '职位',
+        level VARCHAR(20) COMMENT '职级',
+        hire_date DATE COMMENT '入职日期',
+        status VARCHAR(20) DEFAULT 'active' COMMENT '员工状态：active/inactive',
+        manager_id VARCHAR(20) COMMENT '直属上级ID',
+        email VARCHAR(100) COMMENT '邮箱'
+    );
+    """
+    vn.train(ddl=employee_ddl)
+    
+    # 部门信息表
+    department_ddl = """
+    CREATE TABLE departments (
+        department_id VARCHAR(20) PRIMARY KEY COMMENT '部门ID',
+        department_name VARCHAR(100) NOT NULL COMMENT '部门名称',
+        parent_department_id VARCHAR(20) COMMENT '上级部门ID',
+        department_head VARCHAR(20) COMMENT '部门负责人员工ID'
+    );
+    """
+    vn.train(ddl=department_ddl)
+    
+    # 薪资记录表
+    salary_ddl = """
+    CREATE TABLE salary_records (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        employee_id VARCHAR(20) NOT NULL COMMENT '员工ID',
+        salary_month VARCHAR(7) NOT NULL COMMENT '薪资月份 YYYY-MM',
+        base_salary DECIMAL(10,2) COMMENT '基本工资',
+        bonus DECIMAL(10,2) COMMENT '奖金',
+        overtime_pay DECIMAL(10,2) COMMENT '加班费',
+        deductions DECIMAL(10,2) COMMENT '扣款',
+        total_salary DECIMAL(10,2) COMMENT '总薪资'
+    );
+    """
+    vn.train(ddl=salary_ddl)
+    
+    # 考勤记录表
+    attendance_ddl = """
+    CREATE TABLE attendance_records (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        employee_id VARCHAR(20) NOT NULL COMMENT '员工ID',
+        attendance_date DATE NOT NULL COMMENT '考勤日期',
+        check_in_time TIME COMMENT '打卡上班时间',
+        check_out_time TIME COMMENT '打卡下班时间',
+        work_hours DECIMAL(4,2) COMMENT '工作小时数',
+        status VARCHAR(20) COMMENT '考勤状态：normal/late/absent/leave'
+    );
+    """
+    vn.train(ddl=attendance_ddl)
+
+def train_documentation(vn):
+    """训练业务文档和术语定义"""
+    
+    business_docs = [
+        "员工状态说明：active表示在职员工，inactive表示已离职员工。查询时通常只关注在职员工。",
+        
+        "职级体系：字节跳动的职级从低到高包括：1-1, 1-2, 2-1, 2-2, 3-1, 3-2等。数字越大职级越高。",
+        
+        "部门架构：公司采用树形部门结构，通过parent_department_id字段构成上下级关系。技术部门通常包括前端、后端、算法等子部门。",
+        
+        "薪资构成：总薪资 = 基本工资 + 奖金 + 加班费 - 扣款。查询薪资时通常关注total_salary字段。",
+        
+        "考勤规则：正常工作时间为每天8小时。status为'normal'表示正常出勤，'late'表示迟到，'absent'表示缺勤，'leave'表示请假。",
+        
+        "时间查询约定：'今年'指当前年份，'去年'指上一年，'本月'指当前月份。日期格式统一为YYYY-MM-DD。",
+        
+        "排名查询：查询'前N名'时使用ORDER BY ... DESC LIMIT N，查询'后N名'时使用ORDER BY ... ASC LIMIT N。"
+    ]
+    
+    for doc in business_docs:
+        vn.train(documentation=doc)
+
+def train_sql_examples(vn):
+    """训练常见的SQL查询样例"""
+    
+    sql_examples = [
+        # 基础员工信息查询
+        {
+            "question": "查询所有在职员工的基本信息",
+            "sql": "SELECT employee_id, name, position, department_id FROM employees WHERE status = 'active'"
+        },
+        
+        # 部门员工统计
+        {
+            "question": "统计各部门的员工数量",
+            "sql": """
+            SELECT d.department_name, COUNT(e.employee_id) as employee_count
+            FROM departments d
+            LEFT JOIN employees e ON d.department_id = e.department_id AND e.status = 'active'
+            GROUP BY d.department_id, d.department_name
+            ORDER BY employee_count DESC
+            """
+        },
+        
+        # 薪资排名查询
+        {
+            "question": "查询2024年度薪资最高的前10名员工",
+            "sql": """
+            SELECT e.name, e.position, AVG(s.total_salary) as avg_salary
+            FROM employees e
+            JOIN salary_records s ON e.employee_id = s.employee_id
+            WHERE s.salary_month LIKE '2024-%' AND e.status = 'active'
+            GROUP BY e.employee_id, e.name, e.position
+            ORDER BY avg_salary DESC
+            LIMIT 10
+            """
+        },
+        
+        # 考勤统计查询
+        {
+            "question": "统计员工的月度出勤情况",
+            "sql": """
+            SELECT e.name, 
+                   COUNT(CASE WHEN a.status = 'normal' THEN 1 END) as normal_days,
+                   COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
+                   COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_days
+            FROM employees e
+            LEFT JOIN attendance_records a ON e.employee_id = a.employee_id
+            WHERE a.attendance_date >= '2024-01-01' AND e.status = 'active'
+            GROUP BY e.employee_id, e.name
+            """
+        }
+    ]
+    
+    for example in sql_examples:
+        vn.train(question=example["question"], sql=example["sql"])
+
+# 训练脚本的主入口
+if __name__ == "__main__":
+    trained_vanna = train_vanna_with_hr_data()
+    
+    # 测试训练效果
+    test_question = "查询技术部门薪资最高的5名员工"
+    try:
+        sql = trained_vanna.generate_sql(test_question)
+        print(f"\n测试问题: {test_question}")
+        print(f"生成的SQL: {sql}")
+    except Exception as e:
+        print(f"测试失败: {e}")
+```
+
+### 第三步：替换web_research函数
+
+现在我们将Vanna集成到现有的LangGraph流程中：
+
+**修改 backend/src/agent/graph.py**
+
+```python
+# 在文件顶部添加导入
+from agent.vanna_doubao import create_hr_vanna
+import pandas as pd
+import sqlite3
+
+# 全局Vanna实例（在实际部署中，你可能想要更好的实例管理）
+_vanna_instance = None
+
+def get_vanna_instance():
+    """获取全局Vanna实例，实现懒加载"""
+    global _vanna_instance
+    if _vanna_instance is None:
+        print("🚀 初始化Vanna实例...")
+        _vanna_instance = create_hr_vanna()
+        print("✅ Vanna实例创建完成")
+    return _vanna_instance
+
+def database_query_with_vanna(state: WebSearchState, config: RunnableConfig) -> OverallState:
+    """
+    使用Vanna进行数据库查询
+    这个函数直接替换原来的web_research，提供更强大的SQL生成能力
+    """
+    
+    # 获取输入参数
+    query_requirement = state["search_query"]
+    query_id = state["id"]
+    
+    print(f"🔍 [Vanna查询 {query_id}] 开始处理: {query_requirement}")
+    
+    try:
+        # 步骤1: 获取Vanna实例
+        vn = get_vanna_instance()
+        
+        # 步骤2: 使用Vanna生成SQL
+        print(f"🧠 [Vanna查询 {query_id}] 正在生成SQL...")
+        generated_sql = vn.generate_sql(query_requirement)
+        
+        print(f"✅ [Vanna查询 {query_id}] SQL生成成功:")
+        print(f"   {generated_sql}")
+        
+        # 步骤3: 执行SQL查询（这里你需要连接到实际数据库）
+        query_results = execute_sql_with_mock_data(generated_sql, query_id)
+        
+        # 步骤4: 格式化结果
+        formatted_result = format_vanna_query_result(
+            query_requirement=query_requirement,
+            sql=generated_sql,
+            results=query_results,
+            query_id=query_id
+        )
+        
+        # 步骤5: 创建数据源引用
+        sources = [{
+            "label": f"数据库查询 {query_id}",
+            "short_url": f"vanna://query-{query_id}",
+            "value": f"SQL: {generated_sql}"
+        }]
+        
+        print(f"🎉 [Vanna查询 {query_id}] 查询完成")
+        
+        return {
+            "sources_gathered": sources,
+            "search_query": [state["search_query"]],
+            "web_research_result": [formatted_result],
+        }
+        
+    except Exception as e:
+        print(f"❌ [Vanna查询 {query_id}] 执行失败: {e}")
+        # 返回错误信息，而不是让整个流程崩溃
+        error_result = f"查询执行失败: {str(e)}\n原始需求: {query_requirement}"
+        
+        return {
+            "sources_gathered": [{"label": f"错误 {query_id}", "short_url": f"error://{query_id}", "value": str(e)}],
+            "search_query": [state["search_query"]],
+            "web_research_result": [error_result],
+        }
+
+def execute_sql_with_mock_data(sql: str, query_id: int) -> pd.DataFrame:
+    """
+    执行SQL查询（目前使用模拟数据）
+    在实际部署时，这里应该连接到真实的数据库
+    """
+    
+    # 这里是模拟数据，在实际应用中你需要连接到真实数据库
+    print(f"📊 [数据库执行 {query_id}] 模拟执行SQL: {sql[:100]}...")
+    
+    # 创建一些模拟数据
+    if "salary" in sql.lower():
+        # 薪资相关查询的模拟数据
+        mock_data = pd.DataFrame({
+            'name': ['张三', '李四', '王五'],
+            'position': ['高级工程师', '资深工程师', '技术专家'],
+            'total_salary': [35000, 42000, 55000]
+        })
+    elif "department" in sql.lower():
+        # 部门相关查询的模拟数据  
+        mock_data = pd.DataFrame({
+            'department_name': ['技术部', '产品部', '运营部'],
+            'employee_count': [50, 25, 30]
+        })
+    else:
+        # 默认员工信息
+        mock_data = pd.DataFrame({
+            'employee_id': ['001', '002', '003'],
+            'name': ['张三', '李四', '王五'],
+            'position': ['工程师', '产品经理', '运营专员']
+        })
+    
+    print(f"✅ [数据库执行 {query_id}] 返回 {len(mock_data)} 条记录")
+    return mock_data
+
+def format_vanna_query_result(query_requirement: str, sql: str, results: pd.DataFrame, query_id: int) -> str:
+    """
+    格式化Vanna查询结果为用户友好的文本
+    这个函数将原始的SQL结果转换为自然语言描述
+    """
+    
+    result_text = f"""## 查询结果 - {query_requirement}
+
+**生成的SQL查询：**
+```sql
+{sql}
+```
+
+**查询结果：**
+"""
+    
+    if len(results) == 0:
+        result_text += "未找到符合条件的数据。"
+    else:
+        # 将DataFrame转换为易读的表格格式
+        result_text += f"\n共找到 {len(results)} 条记录：\n\n"
+        result_text += results.to_string(index=False)
+        
+        # 添加一些统计信息
+        if len(results) > 5:
+            result_text += f"\n\n（显示前{min(len(results), 10)}条记录）"
+    
+    result_text += f"\n\n*查询ID: {query_id}*"
+    
+    return result_text
+
+# 最后，在graph构建部分，将web_research替换为database_query_with_vanna
+# 找到这行：builder.add_node("web_research", web_research)
+# 替换为：
+builder.add_node("web_research", database_query_with_vanna)
+```
+
+### 第四步：初始化和测试
+
+最后，我们需要确保系统正确初始化：
+
+**backend/src/agent/vanna_init.py**
+```python
+"""
+Vanna初始化脚本
+在系统启动时运行一次，确保Vanna模型已经训练完成
+"""
+
+import os
+from pathlib import Path
+from agent.vanna_trainer import train_vanna_with_hr_data
+
+def ensure_vanna_trained():
+    """
+    确保Vanna模型已经训练
+    这个函数检查是否存在训练好的模型，如果没有就进行训练
+    """
+    
+    # 检查Vanna数据目录是否存在
+    vanna_data_path = Path("./vanna_chromadb")
+    
+    if not vanna_data_path.exists() or len(list(vanna_data_path.glob("*"))) == 0:
+        print("🎓 检测到Vanna未训练，开始自动训练...")
+        train_vanna_with_hr_data()
+        print("✅ Vanna训练完成！")
+    else:
+        print("✅ Vanna模型已存在，跳过训练")
+
+if __name__ == "__main__":
+    ensure_vanna_trained()
+```
+
+**在你的主应用启动时调用初始化：**
+
+修改 **backend/src/agent/app.py**，在文件开头添加：
+
+```python
+# 在其他导入之后添加
+from agent.vanna_init import ensure_vanna_trained
+
+# 在应用启动时确保Vanna已训练
+ensure_vanna_trained()
+```
+
+## 为什么这个方案更优秀
+
+通过使用Vanna，你获得了以下重要优势：
+
+**成熟的RAG架构：** Vanna经过了大量实际项目的验证，它的向量检索和prompt工程都经过了精心优化，比我们手工编写的方案更可靠。
+
+**自动化的学习机制：** 随着使用，Vanna可以通过成功的查询案例来不断改进，这意味着系统会越用越智能。
+
+**更好的错误处理：** Vanna内置了SQL验证、语法检查等机制，减少了生成错误SQL的可能性。
+
+**扩展性和维护性：** 当你需要支持新的数据库或修改schema时，只需要重新训练相关部分，而不需要修改大量代码。
+
+**丰富的生态系统：** Vanna支持多种数据库、向量存储和前端界面，为未来的扩展提供了更多可能性。
+
+现在你的系统架构变得非常优雅：用户输入通过第一个Agent转换为结构化的查询需求，然后Vanna负责将这些需求转换为精确的SQL并执行，最后reflection Agent对结果进行分析和总结。这是一个真正的专业级架构！
+
+你觉得这个集成方案怎么样？有什么具体的数据库连接或部署问题需要我进一步帮助解决吗？
