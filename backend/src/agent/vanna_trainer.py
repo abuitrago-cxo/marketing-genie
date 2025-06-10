@@ -186,11 +186,17 @@ def train_documentation(vn):
         
         "部门架构：公司部门信息包括部门名称、预算、负责人、所在地等。主要部门包括技术研发部、产品设计部、市场营销部、人力资源部、财务部、运营部、数据科学部、设计部等。",
         
-        "薪资构成：总薪资 = 基本工资 + 奖金 + 加班费 - 扣款。查询薪资时关注total_amount字段。薪资按年月分别存储在year和month字段中。",
+        "薪资数据结构：薪资信息存储在salaries表中，包含以下字段：employee_id(员工ID)、year(年份)、month(月份)、base_salary(基本工资)、bonus(奖金)、overtime_pay(加班费)、total_amount(总薪资)、deductions(扣款)、created_at(创建时间)。查询薪资时主要关注total_amount字段。",
+        
+        "薪资查询规则：查询年度薪资时，使用salaries表并按year和month进行筛选。计算平均薪资时使用AVG(total_amount)，计算总薪资时使用SUM(total_amount)。",
         
         "项目状态：active(进行中)、completed(已完成)、cancelled(已取消)、planning(规划中)。",
         
-        "时间查询约定：'今年'指当前年份，'去年'指上一年，'本月'指当前月份。日期格式统一为YYYY-MM-DD，月份格式为YYYY-MM。",
+        "时间查询约定：'今年'指当前年份，'去年'指上一年，'本月'指当前月份。查询年份时使用YEAR()函数，查询月份时使用MONTH()函数。",
+        
+        "表结构映射：员工表(employees)、部门表(departments)、薪资表(salaries)、项目表(projects)、项目分配表(project_assignments)、客户表(clients)、设备表(equipment)。",
+        
+        "常用字段映射：员工薪资使用employees.salary字段（基本薪资）或salaries.total_amount字段（详细薪资记录）；员工部门通过employees.department_id关联departments.id；日期字段统一使用MySQL的DATE和TIMESTAMP类型。",
         
         "排名查询：查询'前N名'时使用ORDER BY ... DESC LIMIT N，查询'后N名'时使用ORDER BY ... ASC LIMIT N。",
         
@@ -296,6 +302,40 @@ def train_sql_examples(vn):
             FROM clients
             WHERE status = 'active'
             ORDER BY name
+            """
+        },
+        
+        # 薪资统计样例 - 2024年薪资查询
+        {
+            "question": "查询2024年所有员工的总薪资",
+            "sql": """
+            SELECT SUM(total_amount) as total_salary_2024
+            FROM salaries
+            WHERE year = 2024
+            """
+        },
+        
+        # 薪资统计样例 - 2024年平均薪资
+        {
+            "question": "查询2024年员工的平均薪资",
+            "sql": """
+            SELECT AVG(total_amount) as average_salary
+            FROM salaries
+            WHERE year = 2024
+            """
+        },
+        
+        # 薪资统计样例 - 按部门统计2024年薪资
+        {
+            "question": "查询2024年各部门的平均薪资",
+            "sql": """
+            SELECT d.name as department_name, AVG(s.total_amount) as average_salary
+            FROM salaries s
+            JOIN employees e ON s.employee_id = e.id
+            JOIN departments d ON e.department_id = d.id
+            WHERE s.year = 2024 AND e.status = 'active'
+            GROUP BY d.id, d.name
+            ORDER BY average_salary DESC
             """
         }
     ]

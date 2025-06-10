@@ -331,7 +331,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
         print(f"❌ [Vanna查询错误] 智能查询失败: {e}")
         
         # 如果Vanna失败，回退到原始方法
-        print(f"🔄 [回退策略] 尝试使用传统方法生成SQL...")
+        print(f"🔄 [回退策略] 尝试使用豆包方法生成SQL...")
         
         try:
             # 获取数据库schema描述
@@ -354,7 +354,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
                 timeout=configurable.regular_model_timeout
             )
             
-            print(f"🔍 [传统SQL生成] 成功生成 {len(sql_result.queries)} 个SQL查询")
+            print(f"🔍 [豆包SQL生成] 成功生成 {len(sql_result.queries)} 个SQL查询")
             
             # 执行每个SQL查询并收集结果
             query_results = []
@@ -372,14 +372,14 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
                 
                 # 添加到sources中
                 sources_gathered.append({
-                    "label": f"传统SQL查询{i+1}",
+                    "label": f"豆包SQL查询{i+1}",
                     "short_url": f"fallback-sql-query-{search_id}-{i+1}",
-                    "value": f"传统方法查询结果 - {sql_query.explanation}"
+                    "value": f"豆包SQL查询结果 - {sql_query.explanation}"
                 })
             
             # 综合所有查询结果
             comprehensive_result = f"""
-                **数据库查询分析报告 - 查询ID: {search_id}** (传统方法)
+                **数据库查询分析报告 - 查询ID: {search_id}** (豆包方法)
 
                 **原始需求:** {search_query}
 
@@ -388,19 +388,19 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
                 {''.join(query_results)}
 
                 **说明:** 
-                由于Vanna智能查询遇到问题，本次使用传统方法生成SQL查询。错误信息：{str(e)}
+                由于Vanna智能查询遇到问题，本次使用豆包方法生成SQL查询。错误信息：{str(e)}
                 """
             
-            print(f"📊 [回退成功] 传统方法查询完成，共执行了 {len(sql_result.queries)} 个查询")
+            print(f"📊 [回退成功] 豆包方法查询完成，共执行了 {len(sql_result.queries)} 个查询")
 
             return {
                 "sources_gathered": sources_gathered,
                 "search_query": [state["search_query"]],
-                        "web_research_result": [comprehensive_result],
-                    }
+                "web_research_result": [comprehensive_result],
+            }
             
         except Exception as fallback_error:
-            print(f"❌ [回退失败] 传统方法也失败了: {fallback_error}")
+            print(f"❌ [回退失败] 豆包方法也失败了: {fallback_error}")
             
             # 返回错误信息
             error_result = f"""
@@ -410,7 +410,7 @@ def database_query(state: DatabaseQueryState, config: RunnableConfig) -> Overall
 
                 **Vanna错误:** {str(e)}
 
-                **传统方法错误:** {str(fallback_error)}
+                **豆包方法错误:** {str(fallback_error)}
 
                 **建议:** 请检查查询语句的语法、数据库连接状态和Vanna配置。
                 """
