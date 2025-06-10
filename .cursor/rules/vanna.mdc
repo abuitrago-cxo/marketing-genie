@@ -105,38 +105,22 @@ class DoubaoVanna(ChromaDB_VectorStore, VannaBase):
 
     def generate_sql(self, question: str, **kwargs) -> str:
         """
-        重写SQL生成方法，添加更多的中文和业务逻辑优化
+        重写SQL生成方法，直接使用原始问题
         """
-        # 构建更适合中文HR查询的prompt
-        enhanced_question = self._enhance_question_for_hr_context(question)
-        
-        # 调用父类的生成方法
-        sql = super().generate_sql(enhanced_question, **kwargs)
-        
-        # 后处理SQL以确保适配我们的数据库
-        validated_sql = self._validate_and_clean_sql(sql)
-        
-        return validated_sql
-    
-    def _enhance_question_for_hr_context(self, question: str) -> str:
-        """
-        为HR业务场景增强问题描述
-        这就像给问题添加更多的上下文信息，帮助模型更好地理解
-        """
-        enhanced = f"""
-        这是一个关于字节跳动人力资源数据的查询问题。
-        
-        业务背景：
-        - 这是一个人员主数据系统，包含员工基本信息、考勤、薪资等数据
-        - 所有货币金额都以人民币为单位
-        - 日期格式统一为YYYY-MM-DD
-        - 员工状态包括：active(在职)、inactive(离职)
-        
-        用户问题：{question}
-        
-        请生成准确的SQL查询来回答这个问题。
-        """
-        return enhanced
+        try:
+            # 直接调用父类的生成方法，不进行问题增强
+            sql = super().generate_sql(question, **kwargs)
+            
+            # 后处理SQL以确保适配我们的数据库
+            validated_sql = self._validate_and_clean_sql(sql)
+            
+            print(f"✅ [Vanna-SQL生成] SQL生成成功:\n   {validated_sql}")
+            
+            return validated_sql
+            
+        except Exception as e:
+            print(f"❌ [Vanna查询错误] 智能查询失败: {e}")
+            raise
     
     def _validate_and_clean_sql(self, sql: str) -> str:
         """
@@ -151,10 +135,21 @@ class DoubaoVanna(ChromaDB_VectorStore, VannaBase):
         # 移除可能的markdown格式
         if sql.startswith('```sql'):
             sql = sql[6:]
+        elif sql.startswith('```'):
+            sql = sql[3:]
         if sql.endswith('```'):
             sql = sql[:-3]
         
         sql = sql.strip()
+        
+        # 修正常见的字段名错误
+        sql = sql.replace('salary_amount', 'salary')
+        sql = sql.replace('employment_date', 'hire_date')
+        sql = sql.replace('employee_status', 'status')
+        
+        # MySQL原生支持YEAR()和EXTRACT()函数，无需转换
+        
+        print(f"Extracted SQL: {sql}")
         
         # 基本的安全检查
         dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']

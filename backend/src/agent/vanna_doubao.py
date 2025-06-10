@@ -107,14 +107,11 @@ class DoubaoVanna(ChromaDB_VectorStore, VannaBase):
 
     def generate_sql(self, question: str, **kwargs) -> str:
         """
-        重写SQL生成方法，添加更多的中文和业务逻辑优化
+        重写SQL生成方法，直接使用原始问题
         """
         try:
-            # 构建更适合中文HR查询的prompt
-            enhanced_question = self._enhance_question_for_hr_context(question)
-            
-            # 调用父类的生成方法
-            sql = super().generate_sql(enhanced_question, **kwargs)
+            # 直接调用父类的生成方法，不进行问题增强
+            sql = super().generate_sql(question, **kwargs)
             
             # 后处理SQL以确保适配我们的数据库
             validated_sql = self._validate_and_clean_sql(sql)
@@ -126,53 +123,6 @@ class DoubaoVanna(ChromaDB_VectorStore, VannaBase):
         except Exception as e:
             print(f"❌ [Vanna查询错误] 智能查询失败: {e}")
             raise
-    
-    def _enhance_question_for_hr_context(self, question: str) -> str:
-        """
-        为HR业务场景增强问题描述
-        这就像给问题添加更多的上下文信息，帮助模型更好地理解
-        """
-        enhanced = f"""
-        这是一个关于字节跳动人力资源数据的查询问题。
-        
-        重要的数据库Schema信息：
-        
-        employees表字段：
-        - id: 员工ID
-        - name: 员工姓名  
-        - email: 员工邮箱
-        - department_id: 部门ID
-        - position: 职位
-        - hire_date: 入职日期
-        - salary: 薪资金额 (注意：字段名是salary，不是salary_amount)
-        - status: 员工状态 (active/inactive)
-        
-        departments表字段：
-        - id: 部门ID
-        - name: 部门名称
-        - budget: 部门预算
-        - head_id: 部门负责人ID
-        - location: 部门所在地
-        
-        projects表字段：
-        - id: 项目ID
-        - name: 项目名称
-        - start_date: 开始日期
-        - end_date: 结束日期
-        - budget: 项目预算
-        - manager_id: 项目经理ID
-        
-        请注意：
-        1. 薪资字段名是 salary，不是 salary_amount
-        2. 日期格式为 YYYY-MM-DD
-        3. 员工状态字段是 status，值为 'active' 或 'inactive'
-        4. 所有金额都以人民币为单位
-        
-        用户问题：{question}
-        
-        请生成准确的SQL查询来回答这个问题。
-        """
-        return enhanced
     
     def _validate_and_clean_sql(self, sql: str) -> str:
         """
@@ -198,6 +148,8 @@ class DoubaoVanna(ChromaDB_VectorStore, VannaBase):
         sql = sql.replace('salary_amount', 'salary')
         sql = sql.replace('employment_date', 'hire_date')
         sql = sql.replace('employee_status', 'status')
+        
+        # MySQL原生支持YEAR()和EXTRACT()函数，无需转换
         
         print(f"Extracted SQL: {sql}")
         

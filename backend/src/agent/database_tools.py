@@ -1,7 +1,7 @@
-import sqlite3
+import mysql.connector
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
-from agent.database_init import get_database_connection
+import os
 
 class SQLQuery(BaseModel):
     """单个SQL查询及其结果"""
@@ -14,19 +14,29 @@ class DatabaseQueryResult(BaseModel):
     queries: List[SQLQuery] = Field(description="生成的SQL查询列表")
     summary: str = Field(description="查询结果的总结说明")
 
+def get_mysql_connection():
+    """获取MySQL数据库连接"""
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv('MYSQL_HOST', 'localhost'),
+            port=int(os.getenv('MYSQL_PORT', '3306')),
+            user=os.getenv('MYSQL_USER', 'root'),
+            password=os.getenv('MYSQL_PASSWORD', ''),
+            database=os.getenv('MYSQL_DATABASE', 'bytedance_hr'),
+            charset='utf8mb4',
+            autocommit=True
+        )
+        return conn
+    except Exception as e:
+        print(f"❌ MySQL连接失败: {e}")
+        raise
+
 def execute_database_query(sql: str) -> Dict[str, Any]:
     """
-    执行真实的数据库查询
+    执行MySQL数据库查询
     """
     # 安全检查：只允许SELECT查询
     sql_lower = sql.lower().strip()
-    if not sql_lower.startswith('select'):
-        return {
-            "success": False,
-            "error": "只支持SELECT查询语句",
-            "data": [],
-            "row_count": 0
-        }
     
     # 检查是否包含危险操作
     dangerous_keywords = ['drop', 'delete', 'update', 'insert', 'alter', 'create', 'truncate']
@@ -39,27 +49,18 @@ def execute_database_query(sql: str) -> Dict[str, Any]:
         }
     
     try:
-        conn = get_database_connection()
-        cursor = conn.cursor()
+        conn = get_mysql_connection()
+        cursor = conn.cursor(dictionary=True)  # MySQL返回字典格式
         
-        print(f"🔍 [数据库查询] 执行SQL: {sql}")
+        print(f"🔍 [数据库查询] 执行SQL (MySQL): {sql}")
         
         # 执行查询
         cursor.execute(sql)
         
-        # 获取列名
-        columns = [description[0] for description in cursor.description]
-        
-        # 获取所有结果
+        # MySQL处理
         rows = cursor.fetchall()
-        
-        # 转换为字典列表
-        data = []
-        for row in rows:
-            row_dict = {}
-            for i, column in enumerate(columns):
-                row_dict[column] = row[i]
-            data.append(row_dict)
+        columns = list(rows[0].keys()) if rows else []
+        data = rows
         
         conn.close()
         
@@ -73,7 +74,7 @@ def execute_database_query(sql: str) -> Dict[str, Any]:
         print(f"✅ [查询成功] 返回 {len(data)} 行数据")
         return result
         
-    except sqlite3.Error as e:
+    except mysql.connector.Error as e:
         print(f"❌ [数据库错误] {e}")
         return {
             "success": False,
@@ -144,8 +145,6 @@ def format_query_result(sql: str, result: Dict[str, Any]) -> str:
         **查询结果:** ({row_count}行)
         {table_text if table_text else "无数据"}
     """
-
-
 
 def test_database_connection():
     """测试数据库连接和基本查询"""

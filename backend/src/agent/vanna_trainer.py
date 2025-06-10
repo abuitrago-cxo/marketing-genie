@@ -37,110 +37,142 @@ def train_vanna_with_hr_data():
 def train_ddl(vn):
     """训练数据库结构信息"""
     
-    # 员工基本信息表
-    employee_ddl = """
-    CREATE TABLE employees (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        employee_id VARCHAR(20) UNIQUE NOT NULL,
-        name VARCHAR(100) NOT NULL,
-        department_id INTEGER,
-        position VARCHAR(100),
-        level VARCHAR(20),
-        hire_date DATE,
-        status VARCHAR(20) DEFAULT 'active',
-        manager_id VARCHAR(20),
-        email VARCHAR(100),
-        salary DECIMAL(10,2),
-        FOREIGN KEY (department_id) REFERENCES departments(id)
-    );
-    """
-    vn.train(ddl=employee_ddl)
-    
-    # 部门信息表
+    # 部门表（与 mysql_init.py 保持一致）
     department_ddl = """
     CREATE TABLE departments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
-        parent_id INTEGER,
-        head_employee_id VARCHAR(20),
-        FOREIGN KEY (parent_id) REFERENCES departments(id)
-    );
+        budget DECIMAL(12,2),
+        head_id INT,
+        location VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_name (name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
     vn.train(ddl=department_ddl)
     
-    # 项目信息表
+    # 员工表（与 mysql_init.py 保持一致）
+    employee_ddl = """
+    CREATE TABLE employees (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(200) UNIQUE,
+        department_id INT,
+        position VARCHAR(100),
+        hire_date DATE,
+        salary DECIMAL(10,2),
+        manager_id INT,
+        status VARCHAR(20) DEFAULT 'active',
+        phone VARCHAR(20),
+        address VARCHAR(200),
+        birth_date DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (department_id) REFERENCES departments(id),
+        FOREIGN KEY (manager_id) REFERENCES employees(id),
+        INDEX idx_department (department_id),
+        INDEX idx_status (status),
+        INDEX idx_hire_date (hire_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """
+    vn.train(ddl=employee_ddl)
+    
+    # 项目表（与 mysql_init.py 保持一致）
     project_ddl = """
     CREATE TABLE projects (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(200) NOT NULL,
         description TEXT,
-        status VARCHAR(50),
         start_date DATE,
         end_date DATE,
-        budget DECIMAL(15,2),
-        client_id INTEGER,
-        FOREIGN KEY (client_id) REFERENCES clients(id)
-    );
+        budget DECIMAL(12,2),
+        status VARCHAR(20) DEFAULT 'planning',
+        manager_id INT,
+        priority VARCHAR(10),
+        client VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (manager_id) REFERENCES employees(id),
+        INDEX idx_status (status),
+        INDEX idx_manager (manager_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
     vn.train(ddl=project_ddl)
     
-    # 项目分配表
+    # 项目分配表（与 mysql_init.py 保持一致）
     project_assignment_ddl = """
     CREATE TABLE project_assignments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER,
-        employee_id VARCHAR(20),
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project_id INT,
+        employee_id INT,
         role VARCHAR(100),
-        workload_percentage DECIMAL(5,2),
         start_date DATE,
         end_date DATE,
-        FOREIGN KEY (project_id) REFERENCES projects(id),
-        FOREIGN KEY (employee_id) REFERENCES employees(employee_id)
-    );
+        workload_percentage INT,
+        hourly_rate DECIMAL(8,2),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_assignment (project_id, employee_id, start_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
     vn.train(ddl=project_assignment_ddl)
     
-    # 薪资记录表
+    # 薪资记录表（与 mysql_init.py 保持一致）
     salary_ddl = """
-    CREATE TABLE salary_records (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        employee_id VARCHAR(20),
-        month VARCHAR(7),
+    CREATE TABLE salaries (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        employee_id INT,
+        year INT,
+        month INT,
         base_salary DECIMAL(10,2),
-        bonus DECIMAL(10,2),
-        overtime_pay DECIMAL(10,2),
-        deductions DECIMAL(10,2),
-        total_salary DECIMAL(10,2),
-        FOREIGN KEY (employee_id) REFERENCES employees(employee_id)
-    );
+        bonus DECIMAL(10,2) DEFAULT 0,
+        overtime_pay DECIMAL(10,2) DEFAULT 0,
+        total_amount DECIMAL(10,2),
+        deductions DECIMAL(8,2) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_salary (employee_id, year, month),
+        INDEX idx_year_month (year, month)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
     vn.train(ddl=salary_ddl)
     
-    # 客户信息表
+    # 客户信息表（与 mysql_init.py 保持一致）
     client_ddl = """
     CREATE TABLE clients (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(200) NOT NULL,
-        industry VARCHAR(100),
         contact_person VARCHAR(100),
-        email VARCHAR(100),
-        phone VARCHAR(50)
-    );
+        email VARCHAR(200),
+        phone VARCHAR(20),
+        address VARCHAR(300),
+        industry VARCHAR(100),
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_name (name),
+        INDEX idx_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
     vn.train(ddl=client_ddl)
     
-    # 设备信息表
+    # 设备信息表（与 mysql_init.py 保持一致）
     equipment_ddl = """
     CREATE TABLE equipment (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(200) NOT NULL,
         type VARCHAR(100),
-        assigned_to VARCHAR(20),
+        model VARCHAR(100),
+        serial_number VARCHAR(100) UNIQUE,
         purchase_date DATE,
-        cost DECIMAL(10,2),
-        status VARCHAR(50),
-        FOREIGN KEY (assigned_to) REFERENCES employees(employee_id)
-    );
+        price DECIMAL(10,2),
+        employee_id INT,
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL,
+        INDEX idx_type (type),
+        INDEX idx_status (status),
+        INDEX idx_employee (employee_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
     vn.train(ddl=equipment_ddl)
 
@@ -152,9 +184,9 @@ def train_documentation(vn):
         
         "职级体系：字节跳动的职级从低到高包括：助理、专员、高级专员、主管、高级主管、经理、高级经理、总监、高级总监、VP等。",
         
-        "部门架构：公司采用树形部门结构，通过parent_id字段构成上下级关系。主要部门包括技术部、产品部、设计部、运营部、市场部、人力资源部、财务部等。",
+        "部门架构：公司部门信息包括部门名称、预算、负责人、所在地等。主要部门包括技术研发部、产品设计部、市场营销部、人力资源部、财务部、运营部、数据科学部、设计部等。",
         
-        "薪资构成：总薪资 = 基本工资 + 奖金 + 加班费 - 扣款。查询薪资时通常关注total_salary字段。",
+        "薪资构成：总薪资 = 基本工资 + 奖金 + 加班费 - 扣款。查询薪资时关注total_amount字段。薪资按年月分别存储在year和month字段中。",
         
         "项目状态：active(进行中)、completed(已完成)、cancelled(已取消)、planning(规划中)。",
         
@@ -162,7 +194,9 @@ def train_documentation(vn):
         
         "排名查询：查询'前N名'时使用ORDER BY ... DESC LIMIT N，查询'后N名'时使用ORDER BY ... ASC LIMIT N。",
         
-        "设备类型：主要包括笔记本电脑、台式机、手机、平板、显示器等。设备状态包括：active(使用中)、maintenance(维修中)、retired(已报废)。"
+        "设备管理：设备类型包括笔记本电脑、台式机、手机、平板、显示器等。设备状态包括：active(使用中)、maintenance(维修中)、retired(已报废)。",
+        
+        "客户管理：客户状态包括：active(活跃)、inactive(非活跃)、potential(潜在客户)。客户信息包含联系人、行业等详细信息。"
     ]
     
     for doc in business_docs:
@@ -175,14 +209,14 @@ def train_sql_examples(vn):
         # 基础员工信息查询
         {
             "question": "查询所有在职员工的基本信息",
-            "sql": "SELECT employee_id, name, position, d.name as department FROM employees e LEFT JOIN departments d ON e.department_id = d.id WHERE e.status = 'active'"
+            "sql": "SELECT id, name, position, d.name as department FROM employees e LEFT JOIN departments d ON e.department_id = d.id WHERE e.status = 'active'"
         },
         
         # 部门员工统计
         {
             "question": "统计各部门的员工数量",
             "sql": """
-            SELECT d.name as department_name, COUNT(e.employee_id) as employee_count
+            SELECT d.name as department_name, COUNT(e.id) as employee_count
             FROM departments d
             LEFT JOIN employees e ON d.id = e.department_id AND e.status = 'active'
             GROUP BY d.id, d.name
@@ -194,12 +228,12 @@ def train_sql_examples(vn):
         {
             "question": "查询2024年度薪资最高的前10名员工",
             "sql": """
-            SELECT e.name, e.position, d.name as department, AVG(s.total_salary) as avg_salary
+            SELECT e.name, e.position, d.name as department, AVG(s.total_amount) as avg_salary
             FROM employees e
-            JOIN salary_records s ON e.employee_id = s.employee_id
+            JOIN salaries s ON e.id = s.employee_id
             LEFT JOIN departments d ON e.department_id = d.id
-            WHERE s.month LIKE '2024-%' AND e.status = 'active'
-            GROUP BY e.employee_id, e.name, e.position, d.name
+            WHERE s.year = 2024 AND e.status = 'active'
+            GROUP BY e.id, e.name, e.position, d.name
             ORDER BY avg_salary DESC
             LIMIT 10
             """
@@ -212,7 +246,7 @@ def train_sql_examples(vn):
             SELECT e.name as employee_name, p.name as project_name, pa.role, pa.workload_percentage
             FROM employees e
             JOIN departments d ON e.department_id = d.id
-            JOIN project_assignments pa ON e.employee_id = pa.employee_id
+            JOIN project_assignments pa ON e.id = pa.employee_id
             JOIN projects p ON pa.project_id = p.id
             WHERE d.name LIKE '%技术%' AND e.status = 'active'
             ORDER BY e.name, p.name
@@ -225,7 +259,7 @@ def train_sql_examples(vn):
             "sql": """
             SELECT d.name as department_name, 
                    AVG(e.salary) as avg_salary,
-                   COUNT(e.employee_id) as employee_count
+                   COUNT(e.id) as employee_count
             FROM employees e
             JOIN departments d ON e.department_id = d.id
             WHERE e.status = 'active'
@@ -241,11 +275,27 @@ def train_sql_examples(vn):
             SELECT e.name as employee_name, 
                    eq.name as equipment_name, 
                    eq.type as equipment_type,
+                   eq.model,
                    eq.status
             FROM employees e
-            LEFT JOIN equipment eq ON e.employee_id = eq.assigned_to
+            LEFT JOIN equipment eq ON e.id = eq.employee_id
             WHERE e.status = 'active'
             ORDER BY e.name, eq.type
+            """
+        },
+        
+        # 客户信息查询
+        {
+            "question": "查询活跃客户信息",
+            "sql": """
+            SELECT name as client_name,
+                   contact_person,
+                   email,
+                   phone,
+                   industry
+            FROM clients
+            WHERE status = 'active'
+            ORDER BY name
             """
         }
     ]
