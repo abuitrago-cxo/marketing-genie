@@ -1,23 +1,3 @@
-import sys
-import os
-
-# Get the absolute path of the current script (app.py)
-# e.g., /path/to/your/project/backend/src/agent/app.py
-current_script_path = os.path.abspath(__file__)
-
-# Get the directory containing app.py (the 'agent' directory)
-# e.g., /path/to/your/project/backend/src/agent
-agent_dir = os.path.dirname(current_script_path)
-
-# Get the directory containing the 'agent' directory (the 'src' directory)
-# e.g., /path/to/your/project/backend/src
-src_dir = os.path.dirname(agent_dir)
-
-# Add the 'src' directory to the beginning of sys.path
-# This allows Python to find packages like 'agent' directly from 'src'
-if src_dir not in sys.path:
-    sys.path.insert(0, src_dir)
-
 # mypy: disable - error - code = "no-untyped-def,misc"
 import pathlib
 from fastapi import FastAPI, Response
