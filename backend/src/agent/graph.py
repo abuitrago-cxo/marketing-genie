@@ -5,6 +5,7 @@ import re
 from agent.tools_and_schemas import SearchQueryList, Reflection, DatabaseQueryResult
 from agent.database_schema import get_full_schema_for_ai
 from agent.database_tools import execute_database_query, format_query_result
+from agent.vanna_doubao import create_hr_vanna
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage
 from langgraph.types import Send
@@ -39,6 +40,18 @@ load_dotenv()
 # 检查豆包API Key
 if os.getenv("ARK_API_KEY") is None:
     raise ValueError("ARK_API_KEY is not set")
+
+# 全局Vanna实例（懒加载）
+_vanna_instance = None
+
+def get_vanna_instance():
+    """获取全局Vanna实例，实现懒加载"""
+    global _vanna_instance
+    if _vanna_instance is None:
+        print("🚀 初始化Vanna实例...")
+        _vanna_instance = create_hr_vanna()
+        print("✅ Vanna实例创建完成")
+    return _vanna_instance
 
 
 def create_ark_client(timeout: int = 300) -> Ark:
@@ -252,106 +265,165 @@ def continue_to_database_query(state: QueryGenerationState):
 
 
 def database_query(state: DatabaseQueryState, config: RunnableConfig) -> OverallState:
-    """LangGraph node that performs database queries based on user requirements."""
+    """
+    LangGraph node that performs database queries using Vanna for intelligent SQL generation.
+    使用Vanna进行智能SQL生成的数据库查询节点
+    """
     configurable = Configuration.from_runnable_config(config)
     
     search_query = state["search_query"]
     search_id = state["id"]
     
-    print(f"🗄️ [数据库查询] 开始处理查询: {search_query} (ID: {search_id})")
+    print(f"🗄️ [Vanna数据库查询] 开始处理查询: {search_query} (ID: {search_id})")
     
-    # 获取数据库schema描述
-    database_schema = get_full_schema_for_ai()
-    
-    # 格式化数据库查询提示
-    current_date = get_current_date()
-    formatted_prompt = database_query_instructions.format(
-        database_schema=database_schema,
-        current_date=current_date,
-        query_requirement=search_query
-    )
-    
-    # 使用快速模型生成SQL查询
     try:
-        sql_result = call_doubao_model(
-            model_name=configurable.web_research_model,  # 使用快速模型
-            messages=formatted_prompt,
-            temperature=0.0,  # 使用较低的温度确保准确性
-            structured_output_schema=DatabaseQueryResult,
-            timeout=configurable.regular_model_timeout
-        )
+        # 步骤1: 获取Vanna实例
+        vn = get_vanna_instance()
         
-        print(f"🔍 [SQL生成] 成功生成 {len(sql_result.queries)} 个SQL查询")
+        # 步骤2: 使用Vanna生成SQL
+        print(f"🧠 [Vanna-SQL生成] 正在为查询生成SQL: {search_query}")
+        generated_sql = vn.generate_sql(search_query)
         
-        # 执行每个SQL查询并收集结果
-        query_results = []
-        sources_gathered = []
+        print(f"✅ [Vanna-SQL生成] SQL生成成功:")
+        print(f"   {generated_sql}")
         
-        for i, sql_query in enumerate(sql_result.queries):
-            print(f"⚡ [执行SQL] 正在执行第 {i+1} 个查询...")
-            print(f"📝 [SQL语句] {sql_query.sql}")
-            
-            # 执行真实数据库查询
-            db_result = execute_database_query(sql_query.sql)
-            
-            # 格式化查询结果
-            formatted_result = format_query_result(sql_query.sql, db_result)
-            query_results.append(formatted_result)
-            
-            # 添加到sources中
-            sources_gathered.append({
-                "label": f"SQL查询{i+1}",
-                "short_url": f"sql-query-{search_id}-{i+1}",
-                "value": f"数据库查询结果 - {sql_query.explanation}"
-            })
-            
-            print(f"✅ [查询完成] 第 {i+1} 个查询执行完成")
+        # 步骤3: 执行SQL查询
+        print(f"⚡ [执行SQL] 正在执行Vanna生成的SQL...")
+        db_result = execute_database_query(generated_sql)
         
-        # 综合所有查询结果
+        # 步骤4: 格式化查询结果
+        formatted_result = format_query_result(generated_sql, db_result)
+        
+        # 步骤5: 创建数据源引用
+        sources_gathered = [{
+            "label": f"Vanna智能查询{search_id}",
+            "short_url": f"vanna-query-{search_id}",
+            "value": f"Vanna生成的SQL查询结果"
+        }]
+        
+        # 步骤6: 构建综合结果报告
         comprehensive_result = f"""
-**数据库查询分析报告 - 查询ID: {search_id}**
+**Vanna智能数据库查询报告 - 查询ID: {search_id}**
 
 **原始需求:** {search_query}
 
-**查询概述:** {sql_result.summary}
+**Vanna生成的SQL:**
+```sql
+{generated_sql}
+```
 
-{''.join(query_results)}
+**查询结果:**
+{formatted_result}
 
-**总结:** 
-根据以上SQL查询结果，我们获取了关于 "{search_query}" 的详细数据信息。这些数据可以用于进一步的分析和决策支持。
+**分析说明:** 
+本查询使用Vanna AI自动生成SQL语句，基于对数据库结构和业务逻辑的深度理解，为您的查询需求"{search_query}"提供了精确的数据分析结果。
 """
         
-        print(f"📊 [汇总完成] 数据库查询汇总完成，共执行了 {len(sql_result.queries)} 个查询")
+        print(f"🎉 [Vanna查询完成] 智能数据库查询成功完成")
         
         return {
             "sources_gathered": sources_gathered,
             "search_query": [state["search_query"]],
-            "web_research_result": [comprehensive_result],  # 保持字段名一致性
+            "web_research_result": [comprehensive_result],
         }
         
     except Exception as e:
-        print(f"❌ [查询错误] 数据库查询失败: {e}")
+        print(f"❌ [Vanna查询错误] 智能查询失败: {e}")
         
-        # 返回错误信息
-        error_result = f"""
-**数据库查询错误 - 查询ID: {search_id}**
-
-**原始需求:** {search_query}
-
-**错误信息:** {str(e)}
-
-**建议:** 请检查查询语句的语法和数据库连接状态。
-"""
+        # 如果Vanna失败，回退到原始方法
+        print(f"🔄 [回退策略] 尝试使用传统方法生成SQL...")
         
-        return {
-            "sources_gathered": [{
-                "label": f"查询错误{search_id}",
-                "short_url": f"error-{search_id}",
-                "value": "数据库查询执行失败"
-            }],
-            "search_query": [state["search_query"]],
-            "web_research_result": [error_result],
-        }
+        try:
+            # 获取数据库schema描述
+            database_schema = get_full_schema_for_ai()
+            
+            # 格式化数据库查询提示
+            current_date = get_current_date()
+            formatted_prompt = database_query_instructions.format(
+                database_schema=database_schema,
+                current_date=current_date,
+                query_requirement=search_query
+            )
+            
+            # 使用快速模型生成SQL查询
+            sql_result = call_doubao_model(
+                model_name=configurable.web_research_model,
+                messages=formatted_prompt,
+                temperature=0.0,
+                structured_output_schema=DatabaseQueryResult,
+                timeout=configurable.regular_model_timeout
+            )
+            
+            print(f"🔍 [传统SQL生成] 成功生成 {len(sql_result.queries)} 个SQL查询")
+            
+            # 执行每个SQL查询并收集结果
+            query_results = []
+            sources_gathered = []
+            
+            for i, sql_query in enumerate(sql_result.queries):
+                print(f"⚡ [执行SQL] 正在执行第 {i+1} 个查询...")
+                
+                # 执行真实数据库查询
+                db_result = execute_database_query(sql_query.sql)
+                
+                # 格式化查询结果
+                formatted_result = format_query_result(sql_query.sql, db_result)
+                query_results.append(formatted_result)
+                
+                # 添加到sources中
+                sources_gathered.append({
+                    "label": f"传统SQL查询{i+1}",
+                    "short_url": f"fallback-sql-query-{search_id}-{i+1}",
+                    "value": f"传统方法查询结果 - {sql_query.explanation}"
+                })
+            
+            # 综合所有查询结果
+            comprehensive_result = f"""
+                **数据库查询分析报告 - 查询ID: {search_id}** (传统方法)
+
+                **原始需求:** {search_query}
+
+                **查询概述:** {sql_result.summary}
+
+                {''.join(query_results)}
+
+                **说明:** 
+                由于Vanna智能查询遇到问题，本次使用传统方法生成SQL查询。错误信息：{str(e)}
+                """
+            
+            print(f"📊 [回退成功] 传统方法查询完成，共执行了 {len(sql_result.queries)} 个查询")
+
+            return {
+                "sources_gathered": sources_gathered,
+                "search_query": [state["search_query"]],
+                        "web_research_result": [comprehensive_result],
+                    }
+            
+        except Exception as fallback_error:
+            print(f"❌ [回退失败] 传统方法也失败了: {fallback_error}")
+            
+            # 返回错误信息
+            error_result = f"""
+                **数据库查询错误 - 查询ID: {search_id}**
+
+                **原始需求:** {search_query}
+
+                **Vanna错误:** {str(e)}
+
+                **传统方法错误:** {str(fallback_error)}
+
+                **建议:** 请检查查询语句的语法、数据库连接状态和Vanna配置。
+                """
+            
+            return {
+                "sources_gathered": [{
+                    "label": f"查询错误{search_id}",
+                    "short_url": f"error-{search_id}",
+                    "value": "数据库查询执行失败"
+                }],
+                "search_query": [state["search_query"]],
+                "web_research_result": [error_result],
+    }
 
 
 def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
