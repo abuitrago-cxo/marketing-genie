@@ -30,7 +30,7 @@ interface AgentActivity {
   duration?: number;
 }
 
-interface EnhancedMessage {
+export interface EnhancedMessage {
   id?: string;
   type: string; // Allow any string type to be flexible with LangGraph message types
   content: string;
@@ -199,100 +199,99 @@ export const EnhancedChatInterface: React.FC<EnhancedChatInterfaceProps> = ({
   onStopGeneration,
   className
 }) => {
-  const [inputValue, setInputValue] = useState('');
+  const [input, setInput] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll to bottom when new messages arrive
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(text); // Assuming text is unique enough for ID
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (input.trim() && !isLoading) {
+      onSendMessage(input);
+      setInput('');
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+    }
+  };
+
   useEffect(() => {
-    if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
-  }, [messages]);
-
-  const handleSend = () => {
-    if (inputValue.trim() && !isLoading) {
-      onSendMessage(inputValue.trim());
-      setInputValue('');
-    }
-  };
-
-  const handleCopy = async (text: string, messageId: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedId(messageId);
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch (error) {
-      console.error('Failed to copy text:', error);
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+  }, [messages, isLoading]);
 
   return (
     <div className={cn("flex flex-col h-full", className)}>
-      {/* Messages area */}
-      <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
-        <div className="space-y-4 max-w-4xl mx-auto">
+      <div className="flex-1 p-4 pb-0 overflow-auto">
+        <div className="space-y-4">
           {messages.map((message, index) => (
             <EnhancedMessageBubble
-              key={message.id || `msg-${index}`}
+              key={message.id || index}
               message={message}
-              onCopy={(text) => handleCopy(text, message.id || `msg-${index}`)}
+              onCopy={handleCopy}
               copiedId={copiedId}
             />
           ))}
-
-          {/* Loading indicator */}
           {isLoading && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 size={16} className="animate-spin" />
-              <span className="text-sm">Agent is thinking...</span>
+            <div className="flex justify-start">
+              <div className="bg-muted border rounded-lg p-3 max-w-[80%] flex items-center space-x-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Agent is thinking...</span>
+              </div>
             </div>
           )}
-        </div>
-      </ScrollArea>
-
-      {/* Input area */}
-      <div className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="p-4 max-w-4xl mx-auto">
-          <div className="flex gap-2">
-            <Input
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Ask your AI assistant..."
-              disabled={isLoading}
-              className="flex-1"
-            />
-
-            {isLoading && onStopGeneration ? (
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={onStopGeneration}
-                className="shrink-0"
-              >
-                <Square size={16} />
-              </Button>
-            ) : (
-              <Button
-                onClick={handleSend}
-                disabled={!inputValue.trim() || isLoading}
-                size="icon"
-                className="shrink-0"
-              >
-                <Send size={16} />
-              </Button>
-            )}
-          </div>
+          <div ref={messagesEndRef} className="h-4" /> {/* Spacer to ensure last message is visible */}
         </div>
       </div>
+
+      <form onSubmit={handleSubmit} className="flex items-end p-4 border-t bg-background gap-2 flex-none">
+        <textarea
+          ref={textareaRef}
+          placeholder={isLoading ? "Agent is thinking..." : "Type your message..."}
+          value={input}
+          onChange={handleInputChange}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSubmit(e);
+            }
+          }}
+          className="flex-1 resize-none overflow-hidden max-h-40 p-2.5 text-sm rounded-lg border border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          rows={1}
+          disabled={isLoading}
+        />
+        <Button type="submit" disabled={!input.trim() || isLoading} size="icon" className="h-11 w-11">
+          {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+          <span className="sr-only">Send message</span>
+        </Button>
+        {isLoading && onStopGeneration && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={onStopGeneration}
+            className="h-11 w-11"
+          >
+            <Square className="h-5 w-5" />
+            <span className="sr-only">Stop generation</span>
+          </Button>
+        )}
+      </form>
     </div>
   );
 };

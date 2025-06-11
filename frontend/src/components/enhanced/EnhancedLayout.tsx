@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { EnhancedSidebar } from './EnhancedSidebar';
-import { EnhancedChatInterface } from './EnhancedChatInterface';
-import { ProjectManagementDashboard } from './ProjectManagementDashboard';
+import { AppRouter } from '../routing/AppRouter';
+import { EnhancedMessage } from './EnhancedChatInterface';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,7 +17,8 @@ import {
   Activity,
   AlertCircle,
   CheckCircle,
-  Clock
+  Clock,
+  Settings
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -39,7 +41,7 @@ interface NotificationItem {
 
 interface EnhancedLayoutProps {
   children?: React.ReactNode;
-  initialView?: 'chat' | 'dashboard';
+  headerActions?: React.ReactNode;
 }
 
 // Sample data
@@ -201,16 +203,80 @@ const NotificationPanel: React.FC<{
   );
 };
 
+// Settings panel component
+const SettingsPanel: React.FC<{
+  isDarkMode: boolean;
+  setIsDarkMode: (isDarkMode: boolean) => void;
+  isOpen: boolean;
+  onClose: () => void;
+}> = ({ isDarkMode, setIsDarkMode, isOpen, onClose }) => {
+  if (!isOpen) return null;
+
+  return (
+    <Card className="absolute top-12 right-4 w-80 z-50 shadow-lg bg-background">
+      <CardContent className="p-0">
+        <div className="p-4 border-b">
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium">Settings</h3>
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </Button>
+          </div>
+        </div>
+        <div className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Dark Mode</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="px-2"
+            >
+              {isDarkMode ? <Sun className="h-4 w-4 mr-1" /> : <Moon className="h-4 w-4 mr-1" />}
+              {isDarkMode ? 'Light' : 'Dark'}
+            </Button>
+          </div>
+          {/* Future settings can be added here */}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 // Main enhanced layout component
 export const EnhancedLayout: React.FC<EnhancedLayoutProps> = ({
   children,
-  initialView = 'chat'
+  headerActions
 }) => {
-  const [currentView, setCurrentView] = useState(initialView);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Get current view from URL path
+  const getCurrentView = () => {
+    const path = location.pathname;
+    if (path.startsWith('/dashboard')) return 'dashboard';
+    if (path.startsWith('/projects')) return 'projects';
+    if (path.startsWith('/specialized')) return 'specialized';
+    if (path.startsWith('/agents')) return 'agents';
+    if (path.startsWith('/workflows')) return 'workflows';
+    if (path.startsWith('/graphs')) return 'graphs';
+    if (path.startsWith('/integrations')) return 'integrations';
+    if (path.startsWith('/tools')) return 'tools';
+    if (path.startsWith('/mcp-servers')) return 'mcp-servers';
+    if (path.startsWith('/settings')) return 'settings';
+    if (path.startsWith('/notifications')) return 'notifications';
+    return 'chat';
+  };
+
+  const currentView = getCurrentView();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [messages, setMessages] = useState<EnhancedMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showSettings, setShowSettings] = useState(false); // New state for settings panel
+
   const [systemStatus] = useState<SystemStatus>({
     isOnline: true,
     activeAgents: 4,
@@ -242,107 +308,223 @@ export const EnhancedLayout: React.FC<EnhancedLayoutProps> = ({
   const handleSidebarItemClick = (itemId: string) => {
     switch (itemId) {
       case 'chat':
-        setCurrentView('chat');
+        navigate('/chat');
+        break;
+      case 'research':
+        navigate('/research');
         break;
       case 'dashboard':
-        setCurrentView('dashboard');
+        navigate('/dashboard');
+        break;
+      case 'tools':
+        navigate('/tools');
+        break;
+      case 'projects':
+        navigate('/projects');
+        break;
+      case 'current-project':
+        navigate('/projects/current');
+        break;
+      case 'archived':
+        navigate('/projects/archived');
+        break;
+      case 'agents':
+        navigate('/agents');
+        break;
+      case 'specialized':
+        navigate('/specialized');
+        break;
+      case 'research-agent':
+        navigate('/agents/research');
+        break;
+      case 'devops-agent':
+        navigate('/agents/devops');
+        break;
+      case 'analysis-agent':
+        navigate('/agents/analysis');
+        break;
+      case 'communication-agent':
+        navigate('/agents/communication');
+        break;
+      case 'workflows':
+        navigate('/workflows');
+        break;
+      case 'graphs':
+        navigate('/graphs');
+        break;
+      case 'integrations':
+        navigate('/integrations');
+        break;
+      case 'github':
+        navigate('/integrations/github');
+        break;
+      case 'database':
+        navigate('/integrations/database');
+        break;
+      case 'cloud':
+        navigate('/integrations/cloud');
+        break;
+      case 'mcp-servers':
+        navigate('/mcp-servers');
+        break;
+      case 'settings':
+        navigate('/settings');
+        break;
+      case 'notifications':
+        navigate('/notifications');
         break;
       default:
         console.log('Navigate to:', itemId);
     }
   };
 
-  // Mock chat functionality
-  const handleSendMessage = (message: string) => {
-    console.log('Sending message:', message);
-    // This would integrate with your actual chat system
+  const handleSendMessage = async (message: string) => {
+    if (!message.trim()) return;
+
+    const newUserMessage: EnhancedMessage = {
+      id: `human-${Date.now()}`,
+      type: 'human',
+      content: message.trim(),
+    };
+    setMessages((prevMessages) => [...prevMessages, newUserMessage]);
+
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('/chat/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: message.trim()
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json(); // Expects ThreadResponse
+      console.log('EnhancedLayout API response:', data);
+      // Check for different response formats
+      let aiResponseMessage;
+      if (data.content) {
+        // Direct content in response
+        aiResponseMessage = data.content;
+      } else if (data.messages && data.messages.length > 0) {
+        // Messages array in response
+        aiResponseMessage = data.messages[0].content;
+      } else if (data.final_answer) {
+        // Legacy format with final_answer
+        aiResponseMessage = data.final_answer;
+      } else {
+        // Fallback
+        aiResponseMessage = "I couldn't generate a response.";
+      }
+      const agentResponse: EnhancedMessage = {
+        id: `ai-${data.id || Date.now()}`,
+        type: 'ai',
+        content: aiResponseMessage,
+      };
+      setMessages((prevMessages) => [...prevMessages, agentResponse]);
+    } catch (error) {
+      console.error('Error sending message to backend:', error);
+      const errorMessage: EnhancedMessage = {
+        id: `error-${Date.now()}`,
+        type: 'error',
+        content: `Error: Could not connect to the AI agent. Please try again. (${error.message})`,
+      };
+      setMessages((prevMessages) => [...prevMessages, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleStopGeneration = () => {
     console.log('Stopping generation');
     // This would stop the current AI generation
+    // For now, we don't have a way to stop an ongoing fetch request easily.
+    // In a real-world scenario, you might use AbortController.
   };
 
-  // Render main content based on current view
-  const renderMainContent = () => {
-    switch (currentView) {
-      case 'dashboard':
-        return <ProjectManagementDashboard />;
-      case 'chat':
-      default:
-        return (
-          <EnhancedChatInterface
-            messages={[]} // This would come from your chat state
-            isLoading={false}
-            onSendMessage={handleSendMessage}
-            onStopGeneration={handleStopGeneration}
-          />
-        );
-    }
-  };
+  // Main content is now handled by AppRouter
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <SystemStatusBar status={systemStatus} />
 
-        <div className="flex items-center gap-2">
-          {/* Theme toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsDarkMode(!isDarkMode)}
-          >
-            {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </Button>
+        <div className="flex items-center gap-4">
+          {/* Header actions (like specialized agent toggle) */}
+          {headerActions}
 
-          {/* Fullscreen toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleFullscreen}
-          >
-            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </Button>
-
-          {/* Notifications */}
-          <div className="relative">
+          <div className="flex items-center gap-2">
+            {/* Settings button */}
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setShowNotifications(!showNotifications)}
+              onClick={() => setShowSettings(!showSettings)}
             >
-              <Activity className="h-4 w-4" />
-              {sampleNotifications.filter(n => !n.isRead).length > 0 && (
-                <Badge className="absolute -top-1 -right-1 w-5 h-5 p-0 text-xs">
-                  {sampleNotifications.filter(n => !n.isRead).length}
-                </Badge>
-              )}
+              <Settings className="h-4 w-4" />
             </Button>
 
-            <NotificationPanel
-              notifications={sampleNotifications}
-              isOpen={showNotifications}
-              onClose={() => setShowNotifications(false)}
-            />
+            {/* Fullscreen toggle */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleFullscreen}
+            >
+              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+
+            {/* Notifications */}
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowNotifications(!showNotifications)}
+              >
+                <Activity className="h-4 w-4" />
+                {sampleNotifications.filter(n => !n.isRead).length > 0 && (
+                  <Badge className="absolute -top-1 -right-1 w-5 h-5 p-0 text-xs">
+                    {sampleNotifications.filter(n => !n.isRead).length}
+                  </Badge>
+                )}
+              </Button>
+
+              <NotificationPanel
+                notifications={sampleNotifications}
+                isOpen={showNotifications}
+                onClose={() => setShowNotifications(false)}
+              />
+              <SettingsPanel
+                isDarkMode={isDarkMode}
+                setIsDarkMode={setIsDarkMode}
+                isOpen={showSettings}
+                onClose={() => setShowSettings(false)}
+              />
+            </div>
           </div>
         </div>
       </div>
 
       {/* Main layout */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <EnhancedSidebar
-          isCollapsed={isSidebarCollapsed}
-          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          activeItem={currentView}
-          onItemClick={handleSidebarItemClick}
-        />
+      <div className="flex flex-row flex-1 overflow-hidden">
+        {/* Sidebar - with its own scroll container */}
+        <div className="h-full overflow-y-auto">
+          <EnhancedSidebar
+            isCollapsed={isSidebarCollapsed}
+            onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            activeItem={currentView}
+            onItemClick={handleSidebarItemClick}
+          />
+        </div>
 
-        {/* Main content */}
-        <div className="flex-1 overflow-hidden">
-          {children || renderMainContent()}
+        {/* Main content - with its own scroll container */}
+        <div className="flex-1 flex flex-col h-full overflow-hidden">
+          {children || <AppRouter messages={messages} isLoading={isLoading} onSendMessage={handleSendMessage} onStopGeneration={handleStopGeneration} />}
         </div>
       </div>
     </div>

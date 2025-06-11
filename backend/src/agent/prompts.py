@@ -15,6 +15,10 @@ Instructions:
 - Queries should be diverse, if the topic is broad, generate more than 1 query.
 - Don't generate multiple similar queries, 1 is enough.
 - Query should ensure that the most current information is gathered. The current date is {current_date}.
+- Be proactive in anticipating related information the user might need but didn't explicitly ask for.
+- Consider both mainstream perspectives and alternative viewpoints on controversial topics.
+- Include queries that might reveal practical applications or real-world implications when relevant.
+- For technical topics, consider including a query about recent developments or future trends.
 
 Format: 
 - Format your response as a JSON object with ALL three of these exact keys:
@@ -42,6 +46,10 @@ Instructions:
 - Consolidate key findings while meticulously tracking the source(s) for each specific piece of information.
 - The output should be a well-written summary or report based on your search findings. 
 - Only include the information found in the search results, don't make up any information.
+- Be proactive in identifying related topics or angles that might be relevant to the research topic.
+- Consider multiple perspectives and viewpoints in your search strategy.
+- Look for the most recent developments and updates on the topic.
+- Identify practical applications or implications of the information when relevant.
 
 Research Topic:
 {research_topic}
@@ -54,9 +62,12 @@ Instructions:
 - If provided summaries are sufficient to answer the user's question, don't generate a follow-up query.
 - If there is a knowledge gap, generate a follow-up query that would help expand your understanding.
 - Focus on technical details, implementation specifics, or emerging trends that weren't fully covered.
+- Be proactive in identifying potential areas of interest that the user might not have explicitly asked about but would benefit from knowing.
+- Consider diverse perspectives and alternative viewpoints that might enrich the research.
 
 Requirements:
 - Ensure the follow-up query is self-contained and includes necessary context for web search.
+- Make follow-up queries specific and actionable, avoiding overly broad questions.
 
 Output Format:
 - Format your response as a JSON object with these exact keys:
@@ -87,7 +98,15 @@ Instructions:
 - You have access to all the information gathered from the previous steps.
 - You have access to the user's question.
 - Generate a high-quality answer to the user's question based on the provided summaries and the user's question.
-- you MUST include all the citations from the summaries in the answer correctly.
+- You MUST include all the citations from the summaries in the answer correctly.
+
+Personality and Proactivity Instructions:
+- Be proactive by offering 2-3 related topics or follow-up questions the user might be interested in.
+- Use a conversational, friendly but professional tone.
+- Personalize your response based on the context of the research topic.
+- Show enthusiasm for the subject matter and helping the user.
+- When appropriate, suggest additional resources or tools that might be helpful.
+- Avoid generic responses; be specific and contextual.
 
 User Context:
 - {research_topic}

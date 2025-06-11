@@ -126,6 +126,22 @@ def create_enhanced_tables(conn_params: dict):
                 timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
         """)
+
+        # MCP Server Registry table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS mcp_server_registry (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) UNIQUE NOT NULL,
+                base_url VARCHAR(512) UNIQUE NOT NULL,
+                description TEXT,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                last_checked_at TIMESTAMP WITH TIME ZONE,
+                last_known_status VARCHAR(50),
+                available_tools_json JSONB,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        """)
         
         # User sessions table (for future use)
         cursor.execute("""
@@ -150,7 +166,10 @@ def create_enhanced_tables(conn_params: dict):
             "CREATE INDEX IF NOT EXISTS idx_llm_usage_timestamp ON llm_usage(timestamp)",
             "CREATE INDEX IF NOT EXISTS idx_system_events_type ON system_events(event_type)",
             "CREATE INDEX IF NOT EXISTS idx_system_events_timestamp ON system_events(timestamp)",
-            "CREATE INDEX IF NOT EXISTS idx_user_sessions_session_id ON user_sessions(session_id)"
+            "CREATE INDEX IF NOT EXISTS idx_user_sessions_session_id ON user_sessions(session_id)",
+            "CREATE INDEX IF NOT EXISTS idx_mcp_server_registry_name ON mcp_server_registry(name)",
+            "CREATE INDEX IF NOT EXISTS idx_mcp_server_registry_base_url ON mcp_server_registry(base_url)",
+            "CREATE INDEX IF NOT EXISTS idx_mcp_server_registry_enabled ON mcp_server_registry(enabled)"
         ]
         
         for index_sql in indexes:
@@ -173,7 +192,16 @@ def create_enhanced_tables(conn_params: dict):
             CREATE TRIGGER update_agent_tasks_updated_at
                 BEFORE UPDATE ON agent_tasks
                 FOR EACH ROW
-                EXECUTE FUNCTION update_updated_at_column()
+                EXECUTE FUNCTION update_updated_at_column();
+        """)
+
+        # Create trigger for mcp_server_registry
+        cursor.execute("""
+            DROP TRIGGER IF EXISTS update_mcp_server_registry_updated_at ON mcp_server_registry;
+            CREATE TRIGGER update_mcp_server_registry_updated_at
+                BEFORE UPDATE ON mcp_server_registry
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
         """)
         
         conn.commit()

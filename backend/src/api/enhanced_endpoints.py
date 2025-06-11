@@ -8,14 +8,35 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 import logging
 
-from agent.configuration import get_llm_status, configure_llm_providers
+from agent.configuration import Configuration
 from agent.router import agent_router
 from agent.llm_manager import llm_manager, LLMConfig, LLMProvider
+from agent.tools import get_tool_registry
 
 logger = logging.getLogger(__name__)
 
 # Create router for enhanced endpoints
 enhanced_router = APIRouter(prefix="/api/v1/enhanced", tags=["enhanced"])
+
+# Helper function to get LLM status
+def get_llm_status():
+    """Get LLM status using the llm_manager"""
+    available_providers = llm_manager.get_available_providers()
+    primary_provider = llm_manager.primary_provider
+    fallback_providers = llm_manager.fallback_providers
+
+    provider_details = {}
+    for provider_id in llm_manager.providers.keys():
+        info = llm_manager.get_provider_info(provider_id)
+        if info:
+            provider_details[provider_id] = info
+
+    return {
+        "available_providers": available_providers,
+        "primary_provider": primary_provider,
+        "fallback_providers": fallback_providers,
+        "provider_details": provider_details
+    }
 
 # Pydantic models for request/response
 class AgentStatusResponse(BaseModel):
@@ -67,7 +88,7 @@ async def add_llm_provider(request: LLMProviderRequest):
     try:
         # Map string to enum
         provider_enum = LLMProvider(request.provider.lower())
-        
+
         config = LLMConfig(
             provider=provider_enum,
             model_name=request.model_name,
@@ -75,9 +96,9 @@ async def add_llm_provider(request: LLMProviderRequest):
             temperature=request.temperature,
             max_tokens=request.max_tokens
         )
-        
+
         provider_id = llm_manager.add_provider(config)
-        
+
         if provider_id:
             return {
                 "success": True,
@@ -86,7 +107,7 @@ async def add_llm_provider(request: LLMProviderRequest):
             }
         else:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Failed to add provider - check API key and configuration"
             )
     except ValueError as e:
@@ -107,7 +128,7 @@ async def set_primary_provider(provider_id: str):
             }
         else:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail=f"Provider {provider_id} not found"
             )
     except Exception as e:
@@ -131,7 +152,16 @@ async def set_fallback_providers(provider_ids: List[str]):
 async def reconfigure_llm_providers():
     """Reconfigure LLM providers based on available API keys"""
     try:
-        config_status = configure_llm_providers()
+        # Reload default providers
+        llm_manager._load_default_providers()
+
+        available_providers = llm_manager.get_available_providers()
+        config_status = {
+            "providers_loaded": len(llm_manager.providers),
+            "available_providers": available_providers,
+            "primary_provider": llm_manager.primary_provider
+        }
+
         return {
             "success": True,
             "configuration_status": config_status
@@ -146,14 +176,14 @@ async def get_system_status():
     try:
         agent_status = agent_router.get_agent_status()
         llm_status = get_llm_status()
-        
+
         # Determine system health
         system_health = "healthy"
         if not llm_status["available_providers"]:
             system_health = "error"
         elif agent_status["total_active_tasks"] > 20:
             system_health = "warning"
-        
+
         return SystemStatusResponse(
             agent_status=AgentStatusResponse(**agent_status),
             llm_status=LLMStatusResponse(**llm_status),
@@ -231,7 +261,7 @@ async def health_check():
     try:
         llm_status = get_llm_status()
         agent_status = agent_router.get_agent_status()
-        
+
         return {
             "status": "healthy",
             "timestamp": "2025-01-03T00:00:00Z",
@@ -247,3 +277,122 @@ async def health_check():
             "status": "unhealthy",
             "error": str(e)
         }
+
+
+# Tool Management Endpoints (Phase 2)
+
+class ToolExecutionRequest(BaseModel):
+    tool_name: str
+    action: str
+    parameters: Dict[str, Any]
+
+class ToolExecutionResponse(BaseModel):
+    success: bool
+    tool_name: str
+    action: str
+    result: Dict[str, Any]
+    execution_time: float
+
+@enhanced_router.get("/tools/registry")
+async def get_tools_registry():
+    """Get all available tools and their capabilities"""
+    try:
+        registry = get_tool_registry()
+        return {
+            "success": True,
+            "data": registry.get_registry_status()
+        }
+    except Exception as e:
+        logger.error(f"Failed to get tools registry: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get tools registry")
+
+@enhanced_router.get("/tools/{tool_name}/capabilities")
+async def get_tool_capabilities(tool_name: str):
+    """Get capabilities for a specific tool"""
+    try:
+        registry = get_tool_registry()
+        capabilities = registry.get_tool_capabilities(tool_name)
+
+        if "error" in capabilities:
+            raise HTTPException(status_code=404, detail=capabilities["error"])
+
+        return {
+            "success": True,
+            "data": capabilities
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get tool capabilities: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get tool capabilities")
+
+@enhanced_router.post("/tools/execute", response_model=ToolExecutionResponse)
+async def execute_tool(request: ToolExecutionRequest):
+    """Execute a tool action"""
+    try:
+        registry = get_tool_registry()
+        result = await registry.execute_tool(
+            request.tool_name,
+            request.action,
+            request.parameters
+        )
+
+        return ToolExecutionResponse(
+            success=result.success,
+            tool_name=result.tool_name,
+            action=request.action,
+            result=result.dict(),
+            execution_time=result.execution_time
+        )
+    except Exception as e:
+        logger.error(f"Failed to execute tool: {e}")
+        raise HTTPException(status_code=500, detail=f"Tool execution failed: {str(e)}")
+
+@enhanced_router.get("/tools/search")
+async def search_tools(query: str):
+    """Search for tools by name or description"""
+    try:
+        registry = get_tool_registry()
+        matching_tools = registry.search_tools(query)
+
+        return {
+            "success": True,
+            "query": query,
+            "data": [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "category": tool.category,
+                    "capabilities": [cap.dict() for cap in tool.get_capabilities()]
+                }
+                for tool in matching_tools
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Failed to search tools: {e}")
+        raise HTTPException(status_code=500, detail="Failed to search tools")
+
+
+# Enhanced Graph Endpoints
+
+@enhanced_router.get("/graph/status")
+async def get_graph_status():
+    """Get status of available graphs (original vs enhanced)"""
+    try:
+        from agent.enhanced_graph import get_enhanced_graph, get_original_graph
+
+        return {
+            "success": True,
+            "data": {
+                "original_graph_available": True,
+                "enhanced_graph_available": True,
+                "default_graph": "enhanced",
+                "features": {
+                    "original": ["web_research", "reflection", "gemini_integration"],
+                    "enhanced": ["web_research", "reflection", "gemini_integration", "tool_execution", "file_operations", "project_management"]
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get graph status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get graph status")

@@ -56,8 +56,8 @@ fi
 echo "🧠 Initializing LLM providers..."
 python -c "
 import sys
-sys.path.append('/deps/backend/src')
-from agent.configuration import configure_llm_providers
+# sys.path.append('/deps/backend/src') # /deps/backend should be in PYTHONPATH
+from src.agent.configuration import configure_llm_providers # Changed import
 config_status = configure_llm_providers()
 print(f'✅ Configured providers: {config_status[\"providers_configured\"]}')
 if config_status['providers_failed']:
@@ -68,8 +68,8 @@ if config_status['providers_failed']:
 echo "🤖 Initializing agent router..."
 python -c "
 import sys
-sys.path.append('/deps/backend/src')
-from agent.router import agent_router
+# sys.path.append('/deps/backend/src') # /deps/backend should be in PYTHONPATH
+from src.agent.router import agent_router # Changed import
 status = agent_router.get_agent_status()
 print(f'✅ Agent router initialized with {len(status[\"agents\"])} agent types')
 "
@@ -79,7 +79,7 @@ echo "🗄️  Checking database..."
 if [ -n "$POSTGRES_URI" ]; then
     python -c "
 import sys
-sys.path.append('/deps/backend/src')
+# sys.path.append('/deps/backend/src') # /deps/backend should be in PYTHONPATH
 # Add any database initialization code here
 print('✅ Database check completed')
 "
@@ -89,13 +89,9 @@ fi
 echo "🌟 Starting enhanced application..."
 
 # Set Python path
-export PYTHONPATH="/deps/backend/src:$PYTHONPATH"
+export PYTHONPATH="/deps/backend:$PYTHONPATH"  # Changed src to be a child of a PYTHONPATH entry
 
-# Start with the enhanced configuration
-exec python -m uvicorn agent.app:app \
-    --host 0.0.0.0 \
-    --port 8000 \
-    --workers 1 \
-    --log-level "${LOG_LEVEL:-info}" \
-    --access-log \
-    --use-colors
+
+# Environment setup complete. Handing over to base image entrypoint to start the server.
+echo "✅ PYTHONPATH set to: $PYTHONPATH"
+echo "🏁 Startup script finished. Base image entrypoint will now take over."

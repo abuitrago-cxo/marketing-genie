@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -24,7 +25,10 @@ import {
   Database,
   Cloud,
   Shield,
-  Workflow
+  Workflow,
+  Wrench,
+  Server,
+  Brain
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -65,9 +69,21 @@ const navigationItems: SidebarItem[] = [
     isActive: true
   },
   {
+    id: 'research',
+    label: 'Research-Augmented Conversational AI',
+    icon: <Brain className="h-4 w-4" />,
+    badge: 'Original'
+  },
+  {
     id: 'dashboard',
     label: 'Dashboard',
     icon: <BarChart3 className="h-4 w-4" />
+  },
+  {
+    id: 'tools',
+    label: 'Tools',
+    icon: <Wrench className="h-4 w-4" />,
+    badge: '8'
   },
   {
     id: 'projects',
@@ -92,6 +108,12 @@ const navigationItems: SidebarItem[] = [
     icon: <Bot className="h-4 w-4" />,
     badge: '4',
     children: [
+      {
+        id: 'specialized',
+        label: 'Specialized Dashboard',
+        icon: <Brain className="h-4 w-4" />,
+        badge: 'Enhanced'
+      },
       {
         id: 'research-agent',
         label: 'Research Agent',
@@ -120,6 +142,12 @@ const navigationItems: SidebarItem[] = [
     icon: <Workflow className="h-4 w-4" />
   },
   {
+    id: 'graphs',
+    label: 'Specialized Graphs',
+    icon: <GitBranch className="h-4 w-4" />,
+    badge: '6'
+  },
+  {
     id: 'integrations',
     label: 'Integrations',
     icon: <Zap className="h-4 w-4" />,
@@ -140,6 +168,12 @@ const navigationItems: SidebarItem[] = [
         icon: <Cloud className="h-4 w-4" />
       }
     ]
+  },
+  {
+    id: 'mcp-servers',
+    label: 'MCP Servers',
+    icon: <Server className="h-4 w-4" />,
+    badge: 'New'
   }
 ];
 
@@ -263,7 +297,8 @@ const SidebarItemComponent: React.FC<{
 const QuickActionComponent: React.FC<{
   action: AgentQuickAction;
   isCollapsed: boolean;
-}> = ({ action, isCollapsed }) => {
+  onActionClick: (actionId: string) => void;
+}> = ({ action, isCollapsed, onActionClick }) => {
   if (isCollapsed) {
     return (
       <TooltipProvider>
@@ -286,7 +321,8 @@ const QuickActionComponent: React.FC<{
   }
 
   return (
-    <Button variant="outline" className="w-full justify-start gap-3 h-auto p-3">
+    <Button variant="outline" className="w-full justify-start gap-3 h-auto p-3" onClick={() => onActionClick(action.id)}>
+
       <div className={cn("w-3 h-3 rounded-full", action.color)} />
       <div className="flex-1 text-left">
         <div className="font-medium text-sm">{action.label}</div>
@@ -304,15 +340,40 @@ export const EnhancedSidebar: React.FC<EnhancedSidebarProps> = ({
   onItemClick,
   className
 }) => {
+  const [isMobile, setIsMobile] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Auto-collapse on mobile
+  const shouldCollapse = isCollapsed || isMobile;
+
+  const handleQuickActionClick = (actionId: string) => {
+    console.log(`Quick Action clicked: ${actionId}`);
+    // Future: navigate to a specific page or trigger an agent action
+    // For example: navigate(`/quick-actions/${actionId}`);
+  };
+
   return (
     <div className={cn(
       "flex flex-col h-full bg-background border-r transition-all duration-300",
-      isCollapsed ? "w-16" : "w-64",
+      shouldCollapse ? "w-16" : "w-72",
+      "md:relative absolute md:translate-x-0",
+      isMobile && !isCollapsed && "z-50 shadow-lg",
       className
     )}>
+
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
-        {!isCollapsed && (
+        {!shouldCollapse && (
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <Bot className="h-4 w-4 text-primary-foreground" />
@@ -329,21 +390,21 @@ export const EnhancedSidebar: React.FC<EnhancedSidebarProps> = ({
             variant="ghost"
             size="sm"
             onClick={onToggleCollapse}
-            className={cn("shrink-0", isCollapsed && "w-full")}
+            className={cn("shrink-0", shouldCollapse && "w-full")}
           >
-            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            {shouldCollapse ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         )}
       </div>
 
       {/* Navigation */}
-      <ScrollArea className="flex-1 px-3 py-4">
+      <ScrollArea className="flex-1 px-3 py-4 max-h-full overflow-y-auto min-h-0">
         <div className="space-y-1">
           {navigationItems.map((item) => (
             <SidebarItemComponent
               key={item.id}
               item={{...item, isActive: item.id === activeItem}}
-              isCollapsed={isCollapsed}
+              isCollapsed={shouldCollapse}
               onItemClick={onItemClick}
             />
           ))}
@@ -352,7 +413,7 @@ export const EnhancedSidebar: React.FC<EnhancedSidebarProps> = ({
         {/* Quick Actions */}
         <div className="mt-6">
           <Separator className="mb-4" />
-          {!isCollapsed && (
+          {!shouldCollapse && (
             <div className="px-2 mb-3">
               <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Quick Actions
@@ -364,7 +425,8 @@ export const EnhancedSidebar: React.FC<EnhancedSidebarProps> = ({
               <QuickActionComponent
                 key={action.id}
                 action={action}
-                isCollapsed={isCollapsed}
+                isCollapsed={shouldCollapse}
+                onActionClick={handleQuickActionClick}
               />
             ))}
           </div>
@@ -374,14 +436,24 @@ export const EnhancedSidebar: React.FC<EnhancedSidebarProps> = ({
       {/* Footer */}
       <div className="border-t p-3">
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className={cn("flex-1", isCollapsed && "px-2")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn("flex-1", shouldCollapse && "px-2")}
+            onClick={() => onItemClick?.('notifications')}
+          >
             <Bell className="h-4 w-4" />
-            {!isCollapsed && <span className="ml-2">Notifications</span>}
+            {!shouldCollapse && <span className="ml-2">Notifications</span>}
           </Button>
 
-          <Button variant="ghost" size="sm" className={cn(isCollapsed && "px-2")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(shouldCollapse && "px-2")}
+            onClick={() => onItemClick?.('settings')}
+          >
             <Settings className="h-4 w-4" />
-            {!isCollapsed && <span className="ml-2">Settings</span>}
+            {!shouldCollapse && <span className="ml-2">Settings</span>}
           </Button>
         </div>
       </div>
