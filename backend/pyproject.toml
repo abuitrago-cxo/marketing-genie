@@ -18,11 +18,13 @@ dependencies = [
     "langgraph-api",
     "fastapi",
     "google-genai",
+    "langchain-community>=0.0.38, <0.1.0",
 ]
 
 
 [project.optional-dependencies]
 dev = ["mypy>=1.11.1", "ruff>=0.6.1"]
+test = ["pytest>=8.3.5", "pytest-mock>=3.0.0"]
 
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]
@@ -56,4 +58,5 @@ convention = "google"
 dev = [
     "langgraph-cli[inmem]>=0.1.71",
     "pytest>=8.3.5",
+    "pytest-mock>=3.0.0",
 ]

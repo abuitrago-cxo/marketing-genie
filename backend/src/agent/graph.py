@@ -15,7 +15,7 @@ from agent.state import (
     ReflectionState,
     WebSearchState,
 )
-from agent.configuration import Configuration
+from agent.configuration import Configuration, LLMProvider
 from agent.prompts import (
     get_current_date,
     query_writer_instructions,
@@ -24,6 +24,7 @@ from agent.prompts import (
     answer_instructions,
 )
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_community.chat_models import ChatOllama, ChatOpenAI
 from agent.utils import (
     get_citations,
     get_research_topic,
@@ -33,11 +34,15 @@ from agent.utils import (
 
 load_dotenv()
 
-if os.getenv("GEMINI_API_KEY") is None:
-    raise ValueError("GEMINI_API_KEY is not set")
-
-# Used for Google Search API
-genai_client = Client(api_key=os.getenv("GEMINI_API_KEY"))
+# Global genai_client for web_research:
+# NOTE: This client is initialized ONCE at startup using GEMINI_API_KEY from environment variables.
+# It will NOT use any 'gemini_api_key' provided in request-time configurations for the web_research node.
+# Web research will only function if a valid GEMINI_API_KEY is set in the environment.
+# To make web_research respect request-time API keys, this client would need to be
+# instantiated within the web_research node using 'configurable.gemini_api_key'.
+_gemini_api_key_env = os.getenv("GEMINI_API_KEY")
+genai_client = Client(api_key=_gemini_api_key_env) if _gemini_api_key_env else None
+# We allow genai_client to be None if key is not set, web_research will fail if it's used without a key.
 
 
 # Nodes
@@ -60,13 +65,37 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     if state.get("initial_search_query_count") is None:
         state["initial_search_query_count"] = configurable.number_of_initial_queries
 
-    # init Gemini 2.0 Flash
-    llm = ChatGoogleGenerativeAI(
-        model=configurable.query_generator_model,
-        temperature=1.0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
-    )
+    # Instantiate the appropriate LLM based on the provider
+    if configurable.llm_provider == LLMProvider.OLLAMA:
+        if not configurable.ollama_base_url or not configurable.ollama_model_name:
+            raise ValueError("Ollama base URL or model name not configured for query generation.")
+        llm = ChatOllama(
+            base_url=configurable.ollama_base_url,
+            model=configurable.ollama_model_name,
+            temperature=1.0,
+        )
+    elif configurable.llm_provider == LLMProvider.LMSTUDIO:
+        if not configurable.lmstudio_base_url or not configurable.lmstudio_model_name:
+            raise ValueError("LM Studio base URL or model name not configured for query generation.")
+        llm = ChatOpenAI(
+            base_url=configurable.lmstudio_base_url,
+            model_name=configurable.lmstudio_model_name,
+            api_key="not-needed",  # LM Studio doesn't require an API key
+            temperature=1.0,
+            max_retries=2,
+        )
+    elif configurable.llm_provider == LLMProvider.GEMINI:
+        if not configurable.gemini_api_key:
+            raise ValueError("Gemini API key not configured for LLMProvider.GEMINI.")
+        llm = ChatGoogleGenerativeAI(
+            model=configurable.query_generator_model,
+            temperature=1.0,
+            max_retries=2,
+            api_key=configurable.gemini_api_key,
+        )
+    else:
+        raise ValueError(f"Unsupported LLM provider: {configurable.llm_provider}")
+
     structured_llm = llm.with_structured_output(SearchQueryList)
 
     # Format the prompt
@@ -111,9 +140,17 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
         research_topic=state["search_query"],
     )
 
+    # NOTE: genai_client is initialized globally using GEMINI_API_KEY from environment variables.
+    # It does not use request-time 'gemini_api_key' from 'configurable'.
+    # Web research will fail if the environment GEMINI_API_KEY was not set at startup.
+    if not genai_client:
+        raise ValueError(
+            "Gemini API key not configured in environment, web research is unavailable."
+        )
+
     # Uses the google genai client as the langchain client doesn't return grounding metadata
     response = genai_client.models.generate_content(
-        model=configurable.query_generator_model,
+        model=configurable.query_generator_model, # This model should be a Gemini model
         contents=formatted_prompt,
         config={
             "tools": [{"google_search": {}}],
@@ -151,9 +188,8 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
         Dictionary with state update, including search_query key containing the generated follow-up query
     """
     configurable = Configuration.from_runnable_config(config)
-    # Increment the research loop count and get the reasoning model
+    # Increment the research loop count
     state["research_loop_count"] = state.get("research_loop_count", 0) + 1
-    reasoning_model = state.get("reasoning_model") or configurable.reasoning_model
 
     # Format the prompt
     current_date = get_current_date()
@@ -162,13 +198,40 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
         research_topic=get_research_topic(state["messages"]),
         summaries="\n\n---\n\n".join(state["web_research_result"]),
     )
-    # init Reasoning Model
-    llm = ChatGoogleGenerativeAI(
-        model=reasoning_model,
-        temperature=1.0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
-    )
+
+    # Instantiate the appropriate LLM for reflection
+    if configurable.llm_provider == LLMProvider.OLLAMA:
+        if not configurable.ollama_base_url or not configurable.ollama_model_name:
+            raise ValueError("Ollama base URL or model name not configured for reflection.")
+        llm = ChatOllama(
+            base_url=configurable.ollama_base_url,
+            model=configurable.ollama_model_name,
+            temperature=1.0,
+        )
+    elif configurable.llm_provider == LLMProvider.LMSTUDIO:
+        if not configurable.lmstudio_base_url or not configurable.lmstudio_model_name:
+            raise ValueError("LM Studio base URL or model name not configured for reflection.")
+        llm = ChatOpenAI(
+            base_url=configurable.lmstudio_base_url,
+            model_name=configurable.lmstudio_model_name,
+            api_key="not-needed",
+            temperature=1.0,
+            max_retries=2,
+        )
+    elif configurable.llm_provider == LLMProvider.GEMINI:
+        # Use reflection_model for Gemini, or ollama/lmstudio_model_name for others
+        if not configurable.gemini_api_key:
+            raise ValueError("Gemini API key not configured for LLMProvider.GEMINI.")
+        model_name = configurable.reflection_model
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=1.0,
+            max_retries=2,
+            api_key=configurable.gemini_api_key,
+        )
+    else:
+        raise ValueError(f"Unsupported LLM provider: {configurable.llm_provider}")
+
     result = llm.with_structured_output(Reflection).invoke(formatted_prompt)
 
     return {
@@ -231,7 +294,6 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
         Dictionary with state update, including running_summary key containing the formatted final summary with sources
     """
     configurable = Configuration.from_runnable_config(config)
-    reasoning_model = state.get("reasoning_model") or configurable.reasoning_model
 
     # Format the prompt
     current_date = get_current_date()
@@ -241,13 +303,39 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
         summaries="\n---\n\n".join(state["web_research_result"]),
     )
 
-    # init Reasoning Model, default to Gemini 2.5 Flash
-    llm = ChatGoogleGenerativeAI(
-        model=reasoning_model,
-        temperature=0,
-        max_retries=2,
-        api_key=os.getenv("GEMINI_API_KEY"),
-    )
+    # Instantiate the appropriate LLM for finalizing the answer
+    if configurable.llm_provider == LLMProvider.OLLAMA:
+        if not configurable.ollama_base_url or not configurable.ollama_model_name:
+            raise ValueError("Ollama base URL or model name not configured for answer finalization.")
+        llm = ChatOllama(
+            base_url=configurable.ollama_base_url,
+            model=configurable.ollama_model_name,
+            temperature=0,
+        )
+    elif configurable.llm_provider == LLMProvider.LMSTUDIO:
+        if not configurable.lmstudio_base_url or not configurable.lmstudio_model_name:
+            raise ValueError("LM Studio base URL or model name not configured for answer finalization.")
+        llm = ChatOpenAI(
+            base_url=configurable.lmstudio_base_url,
+            model_name=configurable.lmstudio_model_name,
+            api_key="not-needed",
+            temperature=0,
+            max_retries=2,
+        )
+    elif configurable.llm_provider == LLMProvider.GEMINI:
+        # Use answer_model for Gemini, or ollama/lmstudio_model_name for others
+        if not configurable.gemini_api_key:
+            raise ValueError("Gemini API key not configured for LLMProvider.GEMINI.")
+        model_name = configurable.answer_model
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=0,
+            max_retries=2,
+            api_key=configurable.gemini_api_key,
+        )
+    else:
+        raise ValueError(f"Unsupported LLM provider: {configurable.llm_provider}")
+
     result = llm.invoke(formatted_prompt)
 
     # Replace the short urls with the original urls and add all used urls to the sources_gathered

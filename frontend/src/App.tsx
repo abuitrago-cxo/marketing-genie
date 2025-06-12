@@ -1,11 +1,18 @@
 import { useStream } from "@langchain/langgraph-sdk/react";
-import type { Message } from "@langchain/langgraph-sdk";
+import type { Message, StreamEvents } from "@langchain/langgraph-sdk";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useConfig } from "./contexts/ConfigContext"; // Import useConfig
 import { ProcessedEvent } from "@/components/ActivityTimeline";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { ChatMessagesView } from "@/components/ChatMessagesView";
+import { ConfigModal } from "./components/ConfigModal"; // Import ConfigModal
+import { Button } from "@/components/ui/button"; // Import Button
+import { CogIcon } from "lucide-react"; // Import an icon
 
 export default function App() {
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false); // State for modal
+  const { llmConfig, isLoading: isConfigLoading } = useConfig(); // Get config status
+
   const [processedEventsTimeline, setProcessedEventsTimeline] = useState<
     ProcessedEvent[]
   >([]);
@@ -22,16 +29,53 @@ export default function App() {
     reasoning_model: string;
   }>({
     apiUrl: import.meta.env.DEV
-      ? "http://localhost:2024"
-      : "http://localhost:8123",
-    assistantId: "agent",
+      ? "http://localhost:2024" // Ensure this matches your local LangGraph server from `langgraph dev`
+      : window.location.origin, // Uses current window origin for deployed version
+    assistantId: "agent", // Matches the key in `LANGSERVE_GRAPHS` in docker-compose.yml
     messagesKey: "messages",
-    onFinish: (event: any) => {
-      console.log(event);
+    onFinish: (event: StreamEvents) => {
+      // Handle stream finishing, e.g., final AI message or error
+      console.log("Stream finished:", event);
     },
-    onUpdateEvent: (event: any) => {
+    onUpdateEvent: (event: StreamEvents) => {
+      // This callback can be used to update UI based on intermediate stream events
+      // console.log("Stream update event:", event);
       let processedEvent: ProcessedEvent | null = null;
-      if (event.generate_query) {
+      if (event.event === "on_chat_model_stream" && event.data?.chunk?.content) {
+        // This is a more generic way to handle streaming content if needed
+        // For now, we rely on the specific named events below
+      }
+
+      // Check for specific named events from the graph
+      const graphEvent = event.data?.chunk; // Assuming custom events are in data.chunk
+      if (graphEvent?.generate_query) {
+        processedEvent = {
+          title: "Generating Search Queries",
+          data: graphEvent.generate_query.query_list.join(", "),
+        };
+      } else if (graphEvent?.web_research) {
+        const sources = graphEvent.web_research.sources_gathered || [];
+        const numSources = sources.length;
+        const uniqueLabels = [
+          ...new Set(sources.map((s: any) => s.label).filter(Boolean)),
+        ];
+        const exampleLabels = uniqueLabels.slice(0, 3).join(", ");
+        processedEvent = {
+          title: "Web Research",
+          data: `Gathered ${numSources} sources. Related to: ${
+            exampleLabels || "N/A"
+          }.`,
+        };
+      } else if (graphEvent?.reflection) {
+        processedEvent = {
+          title: "Reflection",
+          data: graphEvent.reflection.is_sufficient
+            ? "Search successful, generating final answer."
+            : `Need more information, searching for ${graphEvent.reflection.follow_up_queries.join(
+                ", "
+              )}`,
+        };
+      } else if (graphEvent?.finalize_answer) {
         processedEvent = {
           title: "Generating Search Queries",
           data: event.generate_query.query_list.join(", "),
@@ -103,12 +147,34 @@ export default function App() {
   }, [thread.messages, thread.isLoading, processedEventsTimeline]);
 
   const handleSubmit = useCallback(
-    (submittedInputValue: string, effort: string, model: string) => {
+    (submittedInputValue: string, effort: string, model: string) => { // 'model' here is for 'reasoning_model'
+      const { llmConfig, isLoading: isConfigLoading, } = useConfig(); // Get config and loading state
+
+      if (isConfigLoading || !llmConfig.isLoaded) {
+        console.warn("Configuration not loaded yet. Submission prevented.");
+        // Optionally, show a user notification here
+        return;
+      }
       if (!submittedInputValue.trim()) return;
+
       setProcessedEventsTimeline([]);
       hasFinalizeEventOccurredRef.current = false;
 
-      // convert effort to, initial_search_query_count and max_research_loops
+      // Backend configuration from ConfigContext
+      // Ensure keys are snake_case as expected by the Python Pydantic model
+      const currentConfigForBackend = {
+        llm_provider: llmConfig.llmProvider,
+        gemini_api_key: llmConfig.geminiApiKey,
+        ollama_base_url: llmConfig.ollamaBaseUrl,
+        ollama_model_name: llmConfig.ollamaModelName,
+        lmstudio_base_url: llmConfig.lmstudioBaseUrl,
+        lmstudio_model_name: llmConfig.lmstudioModelName,
+        // query_generator_model, reflection_model, answer_model can also be set here
+        // if you want the frontend to override the backend defaults for these specific Gemini models.
+        // For now, we let the backend handle those defaults unless overridden by these provider settings.
+      };
+
+      // Convert effort to initial_search_query_count and max_research_loops
       // low means max 1 loop and 1 query
       // medium means max 3 loops and 3 queries
       // high means max 10 loops and 5 queries
@@ -137,14 +203,22 @@ export default function App() {
           id: Date.now().toString(),
         },
       ];
-      thread.submit({
-        messages: newMessages,
-        initial_search_query_count: initial_search_query_count,
-        max_research_loops: max_research_loops,
-        reasoning_model: model,
-      });
+
+      // The first argument to submit is the graph's input schema.
+      // The second argument (options) can contain 'configurable'.
+      thread.submit(
+        {
+          messages: newMessages,
+          initial_search_query_count: initial_search_query_count,
+          max_research_loops: max_research_loops,
+          reasoning_model: model, // This 'model' is for the specific 'reasoning_model' input field of the graph
+        },
+        {
+          configurable: currentConfigForBackend,
+        }
+      );
     },
-    [thread]
+    [thread, useConfig] // Added useConfig to dependency array
   );
 
   const handleCancel = useCallback(() => {
@@ -155,6 +229,27 @@ export default function App() {
   return (
     <div className="flex h-screen bg-neutral-800 text-neutral-100 font-sans antialiased">
       <main className="flex-1 flex flex-col overflow-hidden max-w-4xl mx-auto w-full">
+        {/* Header Area for Settings Button */}
+        <div className="p-2 flex justify-end border-b border-neutral-700">
+          <Button variant="outline" size="icon" onClick={() => setIsConfigModalOpen(true)} title="Settings">
+            <CogIcon className="h-5 w-5" />
+          </Button>
+        </div>
+
+        {/* Configuration Loading Status/Error Message */}
+        {!isConfigLoading && !llmConfig.isLoaded && (
+          <div className="p-4 bg-red-800 text-white text-center">
+            Failed to load initial LLM configuration. Please check settings or network. Some features may not work correctly.
+          </div>
+        )}
+
+        {/* Reminder for Web Search Limitation - shown if Ollama or LMStudio is selected */}
+        {llmConfig.llmProvider && llmConfig.llmProvider !== "gemini" && (
+          <div className="p-2 bg-yellow-700 text-white text-xs text-center">
+            Note: Web research capability is only functional when 'Gemini' is selected as the LLM provider.
+          </div>
+        )}
+
         <div
           className={`flex-1 overflow-y-auto ${
             thread.messages.length === 0 ? "flex" : ""
@@ -179,6 +274,7 @@ export default function App() {
           )}
         </div>
       </main>
+      <ConfigModal isOpen={isConfigModalOpen} onClose={() => setIsConfigModalOpen(false)} />
     </div>
   );
 }
