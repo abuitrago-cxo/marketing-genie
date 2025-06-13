@@ -1,7 +1,7 @@
 import os
 
 from agent.tools_and_schemas import SearchQueryList, Reflection
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from langchain_core.messages import AIMessage
 from langgraph.types import Send
 from langgraph.graph import StateGraph
@@ -30,11 +30,16 @@ from agent.utils import (
     insert_citation_markers,
     resolve_urls,
 )
+from pathlib import Path
 
-load_dotenv()
+project_root = Path(__file__).parents[2]
+dotenv_file = project_root / ".env"
+print("Explicitly loading:", dotenv_file)
+load_dotenv(dotenv_file)
+# load_dotenv(env_path)
 
 if os.getenv("GEMINI_API_KEY") is None:
-    raise ValueError("GEMINI_API_KEY is not set")
+    raise ValueError("GEMINI_API_KEY is not saasdasdasdsdasdet")
 
 # Used for Google Search API
 genai_client = Client(api_key=os.getenv("GEMINI_API_KEY"))
