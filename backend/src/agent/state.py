@@ -21,6 +21,7 @@ class OverallState(TypedDict):
     max_research_loops: int
     research_loop_count: int
     reasoning_model: str
+    provider: str
 
 
 class ReflectionState(TypedDict):

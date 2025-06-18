@@ -8,6 +8,13 @@ from langchain_core.runnables import RunnableConfig
 class Configuration(BaseModel):
     """The configuration for the agent."""
 
+    provider: str = Field(
+        default="gemini",
+        metadata={
+            "description": "The AI model provider to use (gemini, deepseek, ollama)."
+        },
+    )
+
     query_generator_model: str = Field(
         default="gemini-2.0-flash",
         metadata={
