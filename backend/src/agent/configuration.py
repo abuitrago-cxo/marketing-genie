@@ -15,20 +15,6 @@ class Configuration(BaseModel):
         },
     )
 
-    reflection_model: str = Field(
-        default="gemini-2.5-flash-preview-04-17",
-        metadata={
-            "description": "The name of the language model to use for the agent's reflection."
-        },
-    )
-
-    answer_model: str = Field(
-        default="gemini-2.5-pro-preview-05-06",
-        metadata={
-            "description": "The name of the language model to use for the agent's answer."
-        },
-    )
-
     number_of_initial_queries: int = Field(
         default=3,
         metadata={"description": "The number of initial search queries to generate."},
