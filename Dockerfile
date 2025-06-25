@@ -13,6 +13,12 @@ RUN npm install
 # Copy the rest of the frontend source code
 COPY frontend/ ./
 
+# Add the build argument for the backend API URL to be used by the frontend
+ARG VITE_API_URL
+
+# Set the environment variable so Vite can access the backend API URL during build
+ENV VITE_API_URL=${VITE_API_URL}
+
 # Build the frontend
 RUN npm run build
 
