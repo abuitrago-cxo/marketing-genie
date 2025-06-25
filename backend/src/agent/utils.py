@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 from langchain_core.messages import AnyMessage, AIMessage, HumanMessage
+from urllib.parse import urlparse
 
 
 def get_research_topic(messages: List[AnyMessage]) -> str:
@@ -24,7 +25,7 @@ def resolve_urls(urls_to_resolve: List[Any], id: int) -> Dict[str, str]:
     Create a map of the vertex ai search urls (very long) to a short url with a unique id for each url.
     Ensures each original URL gets a consistent shortened form while maintaining uniqueness.
     """
-    prefix = f"https://vertexaisearch.cloud.google.com/id/"
+    prefix = "https://vertexaisearch.cloud.google.com/id/"
     urls = [site.web.uri for site in urls_to_resolve]
 
     # Create a dictionary that maps each unique URL to its first occurrence index
@@ -55,21 +56,28 @@ def insert_citation_markers(text, citations_list):
     # This ensures that insertions at the end of the string don't affect
     # the indices of earlier parts of the string that still need to be processed.
     sorted_citations = sorted(
-        citations_list, key=lambda c: (c["end_index"], c["start_index"]), reverse=True
+        citations_list,
+        key=lambda c: (c["end_index"], c["start_index"]),
+        reverse=True,
     )
 
     modified_text = text
     for citation_info in sorted_citations:
-        # These indices refer to positions in the *original* text,
-        # but since we iterate from the end, they remain valid for insertion
-        # relative to the parts of the string already processed.
         end_idx = citation_info["end_index"]
+
+        # Deduplicate segments by short_url to avoid repeated labels.
+        unique_segments = {
+            seg["short_url"]: seg for seg in citation_info["segments"]
+        }.values()
+
         marker_to_insert = ""
-        for segment in citation_info["segments"]:
-            marker_to_insert += f" [{segment['label']}]({segment['short_url']})"
-        # Insert the citation marker at the original end_idx position
+        for seg in unique_segments:
+            marker_to_insert += f" [{seg['label']}]({seg['short_url']})"
+
         modified_text = (
-            modified_text[:end_idx] + marker_to_insert + modified_text[end_idx:]
+            modified_text[:end_idx]
+            + marker_to_insert
+            + modified_text[end_idx:]
         )
 
     return modified_text
@@ -149,10 +157,26 @@ def get_citations(response, resolved_urls_map):
             for ind in support.grounding_chunk_indices:
                 try:
                     chunk = candidate.grounding_metadata.grounding_chunks[ind]
+                    # Build a cleaner label based on the source URL's hostname.
+                    parsed = urlparse(chunk.web.uri)
+                    hostname = parsed.hostname or ""
+
+                    # Take the second-level domain (e.g., "google" in "gemini.google.com")
+                    label_parts = hostname.split(".")
+                    # Default label fallback
+                    label = (
+                        chunk.web.title.split(" ")[0]
+                        if chunk.web.title
+                        else hostname
+                    )
+
+                    if len(label_parts) >= 2:
+                        label = label_parts[-2]  # second-level domain
+
                     resolved_url = resolved_urls_map.get(chunk.web.uri, None)
                     citation["segments"].append(
                         {
-                            "label": chunk.web.title.split(".")[:-1][0],
+                            "label": label,
                             "short_url": resolved_url,
                             "value": chunk.web.uri,
                         }

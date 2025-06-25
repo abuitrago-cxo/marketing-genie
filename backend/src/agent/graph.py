@@ -1,4 +1,5 @@
 import os
+import re
 
 from agent.tools_and_schemas import SearchQueryList, Reflection
 from dotenv import load_dotenv
@@ -41,7 +42,9 @@ genai_client = Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 # Nodes
-def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerationState:
+def generate_query(
+    state: OverallState, config: RunnableConfig
+) -> QueryGenerationState:
     """LangGraph node that generates search queries based on the User's question.
 
     Uses Gemini 2.0 Flash to create an optimized search queries for web research based on
@@ -58,7 +61,9 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
 
     # check for custom initial search query count
     if state.get("initial_search_query_count") is None:
-        state["initial_search_query_count"] = configurable.number_of_initial_queries
+        state["initial_search_query_count"] = (
+            configurable.number_of_initial_queries
+        )
 
     # init Gemini 2.0 Flash
     llm = ChatGoogleGenerativeAI(
@@ -81,18 +86,35 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     return {"search_query": result.query}
 
 
-def continue_to_web_research(state: QueryGenerationState):
+def continue_to_web_research(*args):
     """LangGraph node that sends the search queries to the web research node.
 
-    This is used to spawn n number of web research nodes, one for each search query.
+    This router can be invoked with either (prev_state, generated_output) or
+    just (generated_output) depending on the LangGraph version. We therefore
+    inspect all positional arguments and use the one that contains the
+    `search_query` key produced by the `generate_query` node.
     """
+    # Find the dict containing the freshly generated search queries
+    query_state = next(
+        (
+            arg
+            for arg in args
+            if isinstance(arg, dict) and "search_query" in arg
+        ),
+        None,
+    )
+    if query_state is None:
+        raise KeyError("search_query not found in routing arguments")
+
     return [
         Send("web_research", {"search_query": search_query, "id": int(idx)})
-        for idx, search_query in enumerate(state["search_query"])
+        for idx, search_query in enumerate(query_state["search_query"])
     ]
 
 
-def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
+def web_research(
+    state: WebSearchState, config: RunnableConfig
+) -> OverallState:
     """LangGraph node that performs web research using the native Google Search API tool.
 
     Executes a web search using the native Google Search API tool in combination with Gemini 2.0 Flash.
@@ -127,7 +149,9 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
     # Gets the citations and adds them to the generated text
     citations = get_citations(response, resolved_urls)
     modified_text = insert_citation_markers(response.text, citations)
-    sources_gathered = [item for citation in citations for item in citation["segments"]]
+    sources_gathered = [
+        item for citation in citations for item in citation["segments"]
+    ]
 
     return {
         "sources_gathered": sources_gathered,
@@ -153,7 +177,9 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
     configurable = Configuration.from_runnable_config(config)
     # Increment the research loop count and get the reasoning model
     state["research_loop_count"] = state.get("research_loop_count", 0) + 1
-    reasoning_model = state.get("reasoning_model", configurable.reflection_model)
+    reasoning_model = state.get(
+        "reasoning_model", configurable.reflection_model
+    )
 
     # Format the prompt
     current_date = get_current_date()
@@ -202,7 +228,10 @@ def evaluate_research(
         if state.get("max_research_loops") is not None
         else configurable.max_research_loops
     )
-    if state["is_sufficient"] or state["research_loop_count"] >= max_research_loops:
+    if (
+        state["is_sufficient"]
+        or state["research_loop_count"] >= max_research_loops
+    ):
         return "finalize_answer"
     else:
         return [
@@ -254,10 +283,40 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
     unique_sources = []
     for source in state["sources_gathered"]:
         if source["short_url"] in result.content:
-            result.content = result.content.replace(
-                source["short_url"], source["value"]
+            safe_url = (
+                source["value"]
+                .replace("[", "%5B")
+                .replace("]", "%5D")
+                .replace("(", "%28")
+                .replace(")", "%29")
             )
-            unique_sources.append(source)
+            result.content = result.content.replace(
+                source["short_url"], safe_url
+            )
+            unique_sources.append({**source, "safe_url": safe_url})
+        else:
+            # The LLM may have copied only the label (e.g., [bitcoin]) without the link.
+            unique_sources.append({**source, "safe_url": source["value"]})
+
+    # Ensure that every label in square brackets becomes a clickable link
+    for src in unique_sources:
+        label = src["label"]
+        safe_url = (
+            (src.get("safe_url") or src["value"])
+            .replace("[", "%5B")
+            .replace("]", "%5D")
+            .replace("(", "%28")
+            .replace(")", "%29")
+        )
+
+        # Pattern: [label] not immediately followed by "(" (i.e., not already a link)
+        pattern = rf"\[{re.escape(label)}\](?!\()"
+        result.content = re.sub(
+            pattern, f"[{label}]({safe_url})", result.content
+        )
+
+    # Remove leftover numeric-only citation tokens like [3] or [2-4, 2-6]
+    result.content = re.sub(r"\[\d+(?:[,-]\s*\d+)*\]", "", result.content)
 
     return {
         "messages": [AIMessage(content=result.content)],
