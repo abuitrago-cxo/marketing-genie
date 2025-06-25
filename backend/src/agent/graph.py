@@ -1,5 +1,4 @@
 import os
-import re
 
 from agent.tools_and_schemas import SearchQueryList, Reflection
 from dotenv import load_dotenv
@@ -283,40 +282,10 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
     unique_sources = []
     for source in state["sources_gathered"]:
         if source["short_url"] in result.content:
-            safe_url = (
-                source["value"]
-                .replace("[", "%5B")
-                .replace("]", "%5D")
-                .replace("(", "%28")
-                .replace(")", "%29")
-            )
             result.content = result.content.replace(
-                source["short_url"], safe_url
+                source["short_url"], source["value"]
             )
-            unique_sources.append({**source, "safe_url": safe_url})
-        else:
-            # The LLM may have copied only the label (e.g., [bitcoin]) without the link.
-            unique_sources.append({**source, "safe_url": source["value"]})
-
-    # Ensure that every label in square brackets becomes a clickable link
-    for src in unique_sources:
-        label = src["label"]
-        safe_url = (
-            (src.get("safe_url") or src["value"])
-            .replace("[", "%5B")
-            .replace("]", "%5D")
-            .replace("(", "%28")
-            .replace(")", "%29")
-        )
-
-        # Pattern: [label] not immediately followed by "(" (i.e., not already a link)
-        pattern = rf"\[{re.escape(label)}\](?!\()"
-        result.content = re.sub(
-            pattern, f"[{label}]({safe_url})", result.content
-        )
-
-    # Remove leftover numeric-only citation tokens like [3] or [2-4, 2-6]
-    result.content = re.sub(r"\[\d+(?:[,-]\s*\d+)*\]", "", result.content)
+            unique_sources.append(source)
 
     return {
         "messages": [AIMessage(content=result.content)],
