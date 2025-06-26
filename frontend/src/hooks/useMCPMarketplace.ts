@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { MCPServerPackage, MCPServerPackageStatus } from '@/types/mcp'; // Assuming types are moved to a central place
+import { getApiBaseUrl } from '../config/api';
 
 // Backend response type (simplified for now, expand as needed)
 interface MCPServerResponse {
@@ -24,7 +25,7 @@ interface MCPServerInstallRequest {
   auto_enable?: boolean;
 }
 
-const API_BASE_URL = '/api/v1'; // Adjust if your API prefix is different
+const API_BASE_URL = getApiBaseUrl(); // Adjust if your API prefix is different
 
 // Helper to transform backend response to frontend package type
 const transformBackendPackage = (pkg: MCPServerResponse): MCPServerPackage => {

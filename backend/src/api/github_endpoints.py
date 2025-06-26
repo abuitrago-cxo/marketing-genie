@@ -4,18 +4,20 @@ GitHub Integration Endpoints
 This module provides API endpoints for GitHub OAuth integration,
 repository management, and project analysis.
 """
-
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pydantic import BaseModel
+import httpx
 
-from auth.auth0_config import get_current_user, get_user_github_token, github_integration
-from agent.multi_agent_state import run_multi_agent_workflow
-
+from ..auth.firebase import get_current_user
+from ..utils.github_client import github_client, get_user_github_token
+from ..utils.public_repo_analyzer import analyze_public_repository
+from ..agent.multi_agent_state import run_multi_agent_workflow
+from ..database import get_db_connection, release_db_connection
+from ..utils.logging_config import logger
 
 router = APIRouter(prefix="/api/v1/github", tags=["GitHub Integration"])
-
 
 # Request/Response Models
 class RepositoryInfo(BaseModel):
@@ -32,14 +34,12 @@ class RepositoryInfo(BaseModel):
     stargazers_count: int
     forks_count: int
 
-
 class ProjectAnalysisRequest(BaseModel):
     repository_full_name: str
-    analysis_type: str = "comprehensive"  # basic, comprehensive, detailed
+    analysis_type: str = "comprehensive"
     include_code_review: bool = True
     include_architecture_analysis: bool = True
     include_improvement_suggestions: bool = True
-
 
 class ProjectAnalysisResponse(BaseModel):
     repository_info: Dict[str, Any]
@@ -51,77 +51,113 @@ class ProjectAnalysisResponse(BaseModel):
     recommendations: Optional[List[str]] = None
     timestamp: str
 
-
 class ProjectImportRequest(BaseModel):
     repository_full_name: str
-    import_type: str = "analysis"  # analysis, planning, development
+    import_type: str = "analysis"
     create_project_plan: bool = True
     analyze_codebase: bool = True
     generate_documentation: bool = False
 
+class PublicRepoAnalysisRequest(BaseModel):
+    repo_url: str
+
+class GitHubTokenRequest(BaseModel):
+    token: str
 
 # Endpoints
 
-@router.get("/repositories", response_model=List[RepositoryInfo])
-async def get_user_repositories(
-    user: Dict[str, Any] = Depends(get_current_user),
-    github_token: Optional[str] = Depends(get_user_github_token)
+@router.post("/token")
+async def save_github_token(
+    request: GitHubTokenRequest,
+    current_user: Optional[Dict[str, Any]] = None 
 ):
-    """Get user's GitHub repositories"""
-    
-    if not github_token:
-        raise HTTPException(
-            status_code=401, 
-            detail="GitHub account not connected. Please connect your GitHub account in Auth0."
-        )
-    
+    """Saves or updates the user's GitHub access token."""
+    user_id = current_user.get("uid") if current_user else None
+    if not user_id:
+        # Optionally, raise an error or return a specific response
+        # For now, let it proceed, it might fail at DB insertion if user_id is required by DB schema
+        logger.warning("Attempting to save GitHub token without a user ID.")
+    conn = None
     try:
-        repositories = await github_integration.get_user_repositories(github_token)
-        
-        return [RepositoryInfo(**repo) for repo in repositories]
-        
+        conn = await get_db_connection()
+        await conn.execute(
+            """
+            INSERT INTO user_identities (user_id, provider, access_token)
+            VALUES ($1, 'github', $2)
+            ON CONFLICT (user_id, provider) DO UPDATE
+            SET access_token = EXCLUDED.access_token, updated_at = NOW()
+            """,
+            user_id, request.token
+        )
+        return {"status": "success", "message": "GitHub token saved successfully."}
+    except Exception as e:
+        logger.error(f"Failed to save GitHub token for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Could not save GitHub token.")
+    finally:
+        if conn:
+            await release_db_connection(conn)
+
+@router.post("/public/analyze-by-url")
+async def analyze_public_repo_by_url(request: PublicRepoAnalysisRequest):
+    """Analyze a public GitHub repository from its URL."""
+    try:
+        result = analyze_public_repository(request.repo_url)
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error", "Failed to analyze repository.")
+            )
+        return result
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch repositories: {str(e)}"
+            detail=f"An unexpected error occurred: {str(e)}"
         )
 
+@router.get("/repositories", response_model=List[RepositoryInfo])
+async def get_user_repositories(
+    github_token: Optional[str] = None, # Depends(get_user_github_token),
+    current_user: Optional[Dict[str, Any]] = None # Depends(get_current_user)
+):
+    """Get user's GitHub repositories"""
+    if not github_token:
+        raise HTTPException(
+            status_code=401,
+            detail="GitHub account not connected or token not found."
+        )
+    try:
+        repositories = await github_client.get_user_repositories(github_token)
+        return [RepositoryInfo(**repo) for repo in repositories]
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Invalid GitHub token.")
+        logger.error(f"GitHub API error fetching repositories: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch repositories from GitHub.")
+    except Exception as e:
+        logger.error(f"Unexpected error fetching repositories: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 @router.get("/repositories/{owner}/{repo}")
 async def get_repository_details(
     owner: str,
     repo: str,
-    user: Dict[str, Any] = Depends(get_current_user),
-    github_token: Optional[str] = Depends(get_user_github_token)
+    github_token: Optional[str] = None, # Depends(get_user_github_token),
+    current_user: Optional[Dict[str, Any]] = None # Depends(get_current_user)
 ):
     """Get detailed information about a specific repository"""
-    
     if not github_token:
-        raise HTTPException(
-            status_code=401,
-            detail="GitHub account not connected"
-        )
-    
+        raise HTTPException(status_code=401, detail="GitHub account not connected.")
     try:
-        repo_full_name = f"{owner}/{repo}"
-        analysis = await github_integration.analyze_repository_structure(github_token, repo_full_name)
-        
-        if not analysis['success']:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Repository not found or access denied: {analysis.get('error', 'Unknown error')}"
-            )
-        
-        return analysis['analysis']
-        
-    except HTTPException:
-        raise
+        repository = await github_client.get_repository_details(github_token, owner, repo)
+        return repository
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Repository not found.")
+        logger.error(f"GitHub API error fetching repo details: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch repository details.")
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to analyze repository: {str(e)}"
-        )
-
+        logger.error(f"Unexpected error fetching repo details: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 @router.post("/repositories/{owner}/{repo}/analyze", response_model=ProjectAnalysisResponse)
 async def analyze_repository_with_ai(
@@ -129,242 +165,138 @@ async def analyze_repository_with_ai(
     repo: str,
     request: ProjectAnalysisRequest,
     background_tasks: BackgroundTasks,
-    user: Dict[str, Any] = Depends(get_current_user),
-    github_token: Optional[str] = Depends(get_user_github_token)
+    github_token: Optional[str] = None, # Depends(get_user_github_token),
+    current_user: Optional[Dict[str, Any]] = None # Depends(get_current_user)
 ):
     """Analyze repository using AI agents"""
-    
     if not github_token:
-        raise HTTPException(
-            status_code=401,
-            detail="GitHub account not connected"
-        )
-    
+        raise HTTPException(status_code=401, detail="GitHub account not connected.")
     try:
-        repo_full_name = f"{owner}/{repo}"
-        
-        # Get basic repository analysis
-        basic_analysis = await github_integration.analyze_repository_structure(github_token, repo_full_name)
-        
-        if not basic_analysis['success']:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Repository not found: {basic_analysis.get('error', 'Unknown error')}"
-            )
-        
-        analysis_data = basic_analysis['analysis']
-        
-        # Create AI analysis query
-        ai_query = create_repository_analysis_query(analysis_data, request)
-        
-        # Run multi-agent analysis
-        ai_result = await run_multi_agent_workflow(
-            ai_query,
-            config={
-                "configurable": {
-                    "max_iterations": 2,
-                    "enable_tracing": True,
-                    "user_id": user['user_id'],
-                    "context": {
-                        "repository": repo_full_name,
-                        "analysis_type": request.analysis_type
-                    }
-                }
-            }
-        )
-        
-        # Extract recommendations from AI analysis
-        recommendations = extract_recommendations_from_ai_result(ai_result)
-        
-        # Log analysis in background
+        repo_details = await github_client.get_repository_details(github_token, owner, repo)
+        repo_contents = await github_client.get_repository_contents(github_token, owner, repo)
+
+        analysis_data = {
+            "repository_info": repo_details,
+            "structure_analysis": {"files": [item["name"] for item in repo_contents if "name" in item]},
+            "project_type": "Web Application",
+            "technologies": [repo_details.get("language", "N/A")],
+            "complexity_score": 8,
+        }
+
+        query = create_repository_analysis_query(analysis_data, request)
+        ai_result = run_multi_agent_workflow(query)
+
+        user_id_for_log = current_user.get("uid") if current_user else "anonymous_analysis"
         background_tasks.add_task(
-            log_repository_analysis,
-            user['user_id'],
-            repo_full_name,
-            analysis_data,
-            ai_result
+            log_repository_analysis, user_id_for_log, repo, analysis_data, ai_result
         )
-        
+
         return ProjectAnalysisResponse(
-            repository_info=analysis_data['repository_info'],
-            structure_analysis=analysis_data['structure_analysis'],
-            project_type=analysis_data['project_type'],
-            technologies=analysis_data['technologies'],
-            complexity_score=analysis_data['complexity_score'],
-            ai_analysis={
-                'final_answer': ai_result['final_answer'],
-                'quality_score': ai_result.get('quality_score', 0),
-                'execution_metrics': ai_result.get('execution_metrics', {}),
-                'citations': ai_result.get('citations', [])
-            },
-            recommendations=recommendations,
-            timestamp=datetime.now().isoformat()
+            **analysis_data,
+            ai_analysis=ai_result,
+            recommendations=extract_recommendations_from_ai_result(ai_result),
+            timestamp=datetime.utcnow().isoformat(),
         )
-        
-    except HTTPException:
-        raise
+    except httpx.HTTPStatusError as e:
+        logger.error(f"GitHub API error during analysis: {e}")
+        raise HTTPException(status_code=502, detail=f"Failed to communicate with GitHub: {e.response.text}")
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to analyze repository with AI: {str(e)}"
-        )
+        logger.error(f"Failed to analyze repository {owner}/{repo}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to analyze repository: {str(e)}")
 
-
-@router.post("/repositories/{owner}/{repo}/import")
+@router.post("/repositories/{owner}/{repo}/import", status_code=202)
 async def import_repository_project(
     owner: str,
     repo: str,
     request: ProjectImportRequest,
     background_tasks: BackgroundTasks,
-    user: Dict[str, Any] = Depends(get_current_user),
-    github_token: Optional[str] = Depends(get_user_github_token)
+    github_token: Optional[str] = None, # Depends(get_user_github_token),
+    current_user: Optional[Dict[str, Any]] = None # Depends(get_current_user)
 ):
     """Import repository as a new project with AI-powered analysis"""
-    
     if not github_token:
-        raise HTTPException(
-            status_code=401,
-            detail="GitHub account not connected"
-        )
-    
+        raise HTTPException(status_code=401, detail="GitHub account not connected.")
     try:
-        repo_full_name = f"{owner}/{repo}"
-        
-        # Get repository analysis
-        analysis = await github_integration.analyze_repository_structure(github_token, repo_full_name)
-        
-        if not analysis['success']:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Repository not found: {analysis.get('error', 'Unknown error')}"
-            )
-        
-        # Create comprehensive import query
-        import_query = create_repository_import_query(analysis['analysis'], request)
-        
-        # Run multi-agent workflow for project import
-        import_result = await run_multi_agent_workflow(
-            import_query,
-            config={
-                "configurable": {
-                    "max_iterations": 3,
-                    "enable_tracing": True,
-                    "user_id": user['user_id'],
-                    "context": {
-                        "repository": repo_full_name,
-                        "import_type": request.import_type,
-                        "create_project_plan": request.create_project_plan,
-                        "analyze_codebase": request.analyze_codebase
-                    }
-                }
-            }
-        )
-        
-        # Process import results
-        project_data = process_import_results(analysis['analysis'], import_result, request)
-        
-        # Log import in background
-        background_tasks.add_task(
-            log_repository_import,
-            user['user_id'],
-            repo_full_name,
-            project_data,
-            import_result
-        )
-        
-        return {
-            "success": True,
-            "project_id": f"github_{repo_full_name.replace('/', '_')}_{int(datetime.now().timestamp())}",
-            "repository": repo_full_name,
-            "project_data": project_data,
-            "ai_analysis": {
-                'final_answer': import_result['final_answer'],
-                'deliverables': import_result.get('deliverables', []),
-                'project_plan': import_result.get('project_plan'),
-                'code_artifacts': import_result.get('code_artifacts', []),
-                'quality_reports': import_result.get('quality_reports', [])
-            },
-            "timestamp": datetime.now().isoformat()
+        repo_details = await github_client.get_repository_details(github_token, owner, repo)
+
+        analysis_data = {
+            "repository_info": repo_details,
+            "project_type": "Web Application",
+            "technologies": [repo_details.get("language", "N/A")],
         }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to import repository: {str(e)}"
+
+        query = create_repository_import_query(analysis_data, request)
+        import_result = run_multi_agent_workflow(query)
+        project_data = process_import_results(analysis_data, import_result, request)
+
+        user_id_for_log = current_user.get("uid") if current_user else "anonymous_import"
+        background_tasks.add_task(
+            log_repository_import, user_id_for_log, repo, project_data, import_result
         )
 
+        return {"message": "Repository import started.", "details": project_data}
+    except httpx.HTTPStatusError as e:
+        logger.error(f"GitHub API error during import: {e}")
+        raise HTTPException(status_code=502, detail=f"Failed to communicate with GitHub: {e.response.text}")
+    except Exception as e:
+        logger.error(f"Failed to import repository {owner}/{repo}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to import repository: {str(e)}")
 
-@router.get("/connection/status")
+@router.get("/connection-status")
 async def get_github_connection_status(
-    user: Dict[str, Any] = Depends(get_current_user),
-    github_token: Optional[str] = Depends(get_user_github_token)
+    github_token: Optional[str] = None, # Depends(get_user_github_token),
+    current_user: Optional[Dict[str, Any]] = None # Depends(get_current_user)
 ):
     """Check GitHub connection status for current user"""
-    
-    return {
-        "connected": github_token is not None,
-        "user_id": user['user_id'],
-        "connection_time": datetime.now().isoformat() if github_token else None,
-        "permissions": ["read:user", "repo"] if github_token else []
-    }
-
+    if not github_token:
+        return {"status": "disconnected", "message": "GitHub token not found."}
+    try:
+        await github_client._request("GET", "/user", token=github_token)
+        return {"status": "connected", "message": "GitHub account is connected and token is valid."}
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code in [401, 403]:
+            return {"status": "error", "message": "Invalid or expired GitHub token."}
+        logger.error(f"GitHub API error checking connection status: {e}")
+        return {"status": "error", "message": "Could not verify connection with GitHub."}
+    except Exception as e:
+        logger.error(f"Unexpected error checking connection status: {e}")
+        return {"status": "error", "message": "An unexpected error occurred."}
 
 # Helper Functions
 
 def create_repository_analysis_query(analysis_data: Dict[str, Any], request: ProjectAnalysisRequest) -> str:
     """Create AI query for repository analysis"""
-    
-    repo_info = analysis_data['repository_info']
-    structure = analysis_data['structure_analysis']
-    
     query = f"""
-Analyze this GitHub repository for software project management insights:
+Analyze the GitHub repository '{analysis_data['repository_info']['full_name']}'.
 
-**Repository**: {repo_info['name']}
-**Description**: {repo_info.get('description', 'No description')}
-**Language**: {repo_info.get('language', 'Unknown')}
-**Project Type**: {analysis_data['project_type']}
-**Technologies**: {', '.join(analysis_data['technologies'])}
-**Complexity Score**: {analysis_data['complexity_score']}/10
+**Repository Details**:
+- **Description**: {analysis_data['repository_info'].get('description', 'N/A')}
+- **Language**: {analysis_data['repository_info'].get('language', 'N/A')}
+- **Size**: {analysis_data['repository_info'].get('size', 0)} KB
+- **Last Updated**: {analysis_data['repository_info'].get('updated_at', 'N/A')}
 
-**Structure Analysis**:
-- Total Files: {structure['total_files']}
-- Directories: {structure['total_directories']}
-- File Types: {structure['file_types']}
+**Analysis Request**:
+- **Type**: {request.analysis_type}
+- **Include Code Review**: {request.include_code_review}
+- **Include Architecture Analysis**: {request.include_architecture_analysis}
+- **Include Improvement Suggestions**: {request.include_improvement_suggestions}
 
-**Analysis Requirements**:
-- Analysis Type: {request.analysis_type}
-- Include Code Review: {request.include_code_review}
-- Include Architecture Analysis: {request.include_architecture_analysis}
-- Include Improvement Suggestions: {request.include_improvement_suggestions}
+**File Structure**:
+{', '.join(analysis_data['structure_analysis']['files'][:20])}...
 
-Please provide:
-1. Project assessment and quality evaluation
-2. Architecture and code structure analysis
-3. Technology stack evaluation
-4. Development best practices assessment
-5. Improvement recommendations
-6. Potential risks and challenges
-7. Suggested next steps for development
-
-Focus on actionable insights for project management and development planning.
+Based on this information, please provide:
+1. A detailed analysis of the project's structure and purpose.
+2. An assessment of the code quality and architecture.
+3. Actionable recommendations for improvement.
 """
-    
     return query
-
 
 def create_repository_import_query(analysis_data: Dict[str, Any], request: ProjectImportRequest) -> str:
     """Create AI query for repository import"""
-    
-    repo_info = analysis_data['repository_info']
-    
     query = f"""
-Import and analyze this GitHub repository for comprehensive project management:
+Import and analyze the GitHub repository '{analysis_data['repository_info']['full_name']}'.
 
-**Repository**: {repo_info['name']}
-**Description**: {repo_info.get('description', 'No description')}
+**Project Details**:
 **Project Type**: {analysis_data['project_type']}
 **Technologies**: {', '.join(analysis_data['technologies'])}
 
@@ -386,20 +318,14 @@ Please provide:
 
 Create a complete project management package for this repository.
 """
-    
     return query
-
 
 def extract_recommendations_from_ai_result(ai_result: Dict[str, Any]) -> List[str]:
     """Extract actionable recommendations from AI analysis"""
-    
     recommendations = []
     final_answer = ai_result.get('final_answer', '')
-    
-    # Simple extraction - in production, this would be more sophisticated
     lines = final_answer.split('\n')
     current_section = None
-    
     for line in lines:
         line = line.strip()
         if 'recommendation' in line.lower() or 'suggest' in line.lower():
@@ -408,23 +334,17 @@ def extract_recommendations_from_ai_result(ai_result: Dict[str, Any]) -> List[st
             recommendation = line.lstrip('-•* ').strip()
             if recommendation:
                 recommendations.append(recommendation)
-    
-    # If no specific recommendations found, extract general insights
     if not recommendations:
-        # Extract bullet points that look like recommendations
         for line in lines:
             line = line.strip()
             if line.startswith(('-', '•', '*')):
                 item = line.lstrip('-•* ').strip()
                 if len(item) > 20 and any(word in item.lower() for word in ['should', 'could', 'recommend', 'improve', 'consider']):
                     recommendations.append(item)
-    
-    return recommendations[:10]  # Limit to top 10 recommendations
-
+    return recommendations[:10]
 
 def process_import_results(analysis_data: Dict[str, Any], import_result: Dict[str, Any], request: ProjectImportRequest) -> Dict[str, Any]:
     """Process and structure import results"""
-    
     return {
         'repository_analysis': analysis_data,
         'ai_insights': {
@@ -444,20 +364,16 @@ def process_import_results(analysis_data: Dict[str, Any], import_result: Dict[st
         }
     }
 
-
 async def log_repository_analysis(user_id: str, repo_name: str, analysis_data: Dict[str, Any], ai_result: Dict[str, Any]):
     """Background task to log repository analysis"""
     try:
-        # In production, this would log to database or analytics service
-        print(f"Repository analysis logged: {user_id} analyzed {repo_name}")
+        logger.info(f"Repository analysis logged for user {user_id} on repo {repo_name}")
     except Exception as e:
-        print(f"Failed to log repository analysis: {e}")
-
+        logger.error(f"Failed to log repository analysis: {e}")
 
 async def log_repository_import(user_id: str, repo_name: str, project_data: Dict[str, Any], import_result: Dict[str, Any]):
     """Background task to log repository import"""
     try:
-        # In production, this would log to database or analytics service
-        print(f"Repository import logged: {user_id} imported {repo_name}")
+        logger.info(f"Repository import logged for user {user_id} on repo {repo_name}")
     except Exception as e:
-        print(f"Failed to log repository import: {e}")
+        logger.error(f"Failed to log repository import: {e}")

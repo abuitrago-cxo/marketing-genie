@@ -10,15 +10,25 @@ from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 import fastapi.exceptions
 from agent.database import db_manager
+from memory import (
+    get_short_memory_manager, 
+    close_short_memory_manager, 
+    get_graphiti_memory_manager, 
+    close_graphiti_memory_manager
+)
 from contextlib import asynccontextmanager
 
 # Define lifespan for startup and shutdown
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize DB connections
+    # Initialize DB and memory managers
     await db_manager.initialize()
+    await get_short_memory_manager()
+    await get_graphiti_memory_manager()
     yield
-    # Close DB connections
+    # Close DB and memory managers
+    await close_graphiti_memory_manager()
+    await close_short_memory_manager()
     await db_manager.close()
 
 # Define FastAPI app with lifespan
@@ -39,6 +49,7 @@ try:
     api_modules = [
         ('api.specialized_endpoints', 'router', None),
         ('api.enhanced_endpoints', 'enhanced_router', None),
+        ('api.system_endpoints', 'router', None),
         ('api.github_endpoints', 'router', None),
         ('api.mcp_registry_endpoints', 'router', None),
         ('api.mcp_router', 'router', None),

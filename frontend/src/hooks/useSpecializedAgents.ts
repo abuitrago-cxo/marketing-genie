@@ -1,4 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
+import { getApiBaseUrl } from '../config/api';
+
+const API_BASE_URL = `${getApiBaseUrl()}/specialized`;
 
 // Types for specialized agents API
 interface SpecializedQuery {
@@ -176,7 +179,7 @@ export const useSpecializedAgents = (
         use_real_agents: useRealAgents
       };
 
-      const response = await fetch('/api/v1/specialized/query', {
+      const response = await fetch(`${API_BASE_URL}/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -268,7 +271,7 @@ export const useSpecializedAgents = (
       // Use message ID as trace_id if no specific trace_id is available
       const traceId = messageId;
 
-      const response = await fetch('/api/v1/specialized/feedback', {
+      const response = await fetch(`${API_BASE_URL}/feedback`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

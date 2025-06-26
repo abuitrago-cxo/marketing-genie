@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '../config/api';
 
 // Types matching the backend Pydantic models
 export interface Project {
@@ -37,6 +38,16 @@ export interface Task {
   metadata?: Record<string, any>;
   created_at: string;
   updated_at: string;
+}
+
+export interface UpdateProjectData {
+  name?: string;
+  description?: string;
+  github_repo_url?: string;
+  status?: string;
+  priority?: string;
+  team?: string;
+  user_id?: string;
 }
 
 export interface CreateProjectData {
@@ -219,12 +230,47 @@ export interface ProjectOrchestratorResponse {
   error?: string;
 }
 
-const API_BASE = window.location.pathname.startsWith('/app') ? '/app/api/v1/projects' : '/api/v1/projects';
+const API_BASE = `${getApiBaseUrl()}/projects`;
 
 export const useProjects = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Update an existing project
+  const updateProject = useCallback(
+    async (projectId: number, data: UpdateProjectData): Promise<Project | null> => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(`${API_BASE}/${projectId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to update project: ${response.statusText}`);
+        }
+
+        const updatedProject: Project = await response.json();
+        // Update local state
+        setProjects((prev) =>
+          prev.map((p) => (p.id === projectId ? updatedProject : p))
+        );
+        return updatedProject;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to update project');
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
 
   // Fetch all projects
   const fetchProjects = useCallback(async (filters?: {
@@ -466,6 +512,31 @@ export const useProjects = () => {
     }
   }, []);
 
+  // Run Code Engineer task on project
+  const runCodeEngineer = useCallback(async (
+    projectId: number,
+    action: string = 'improve_codebase'
+  ): Promise<any | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/api/v1/enhanced/agents/code_engineer/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId, action }),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to create code engineer task: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create code engineer task');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Orchestrate project
   const orchestrateProject = useCallback(async (
     projectId: number,
@@ -501,6 +572,7 @@ export const useProjects = () => {
     loading,
     error,
     fetchProjects,
+    updateProject,
     createProject,
     getProject,
     analyzeCodebase,
@@ -509,6 +581,7 @@ export const useProjects = () => {
     analyzeTasks,
     analyzeResearch,
     analyzeQA,
+    runCodeEngineer,
     orchestrateProject,
   };
 };

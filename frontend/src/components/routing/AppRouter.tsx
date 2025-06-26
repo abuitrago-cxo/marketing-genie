@@ -39,6 +39,7 @@ import { CloudServicesPage } from '../pages/integrations/CloudServicesPage';
 
 // MCP Server Management
 import MCPServersPage from '../pages/MCPServersPage';
+import ImportPage from '../../pages/ImportPage';
 
 export const AppRouter: React.FC<AppRouterProps> = ({ messages, isLoading, onSendMessage, onStopGeneration, currentView, onViewChange }) => {
   return (
@@ -79,6 +80,9 @@ export const AppRouter: React.FC<AppRouterProps> = ({ messages, isLoading, onSen
 
       {/* MCP Server Management */}
       <Route path="/mcp-servers" element={<MCPServersPage />} />
+
+      {/* Project Import */}
+      <Route path="/import" element={<ImportPage />} />
 
       {/* Settings and notifications */}
       <Route path="/settings" element={<SettingsPage />} />

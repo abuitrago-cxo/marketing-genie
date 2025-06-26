@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '../config/api';
 
 export interface Agent {
   id: string;
@@ -32,7 +33,7 @@ interface UseAgentsReturn {
   toggleAgent: (agentId: string) => Promise<void>;
 }
 
-const API_BASE_URL = '/api/v1';
+const API_BASE_URL = getApiBaseUrl();
 
 export const useAgents = (): UseAgentsReturn => {
   const [agents, setAgents] = useState<Agent[]>([]);

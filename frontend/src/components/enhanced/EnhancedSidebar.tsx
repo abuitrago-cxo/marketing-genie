@@ -28,7 +28,8 @@ import {
   Workflow,
   Wrench,
   Server,
-  Brain
+  Brain,
+  FilePlus
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -101,6 +102,11 @@ const navigationItems: SidebarItem[] = [
         icon: <FileText className="h-4 w-4" />
       }
     ]
+  },
+  {
+    id: 'import',
+    label: 'Import Project',
+    icon: <FilePlus className="h-4 w-4" />
   },
   {
     id: 'agents',

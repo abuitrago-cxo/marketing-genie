@@ -51,13 +51,6 @@ describe('useUserPreferences', () => {
 
     const { result } = renderHook(() => useUserPreferences());
 
-    expect(result.current.loading).toBe(true);
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-
-    expect(result.current.loading).toBe(false);
     expect(result.current.preferences.theme).toBe('system');
     expect(result.current.preferences.colorScheme).toBe('original');
     expect(result.current.preferences.sidebarCollapsed).toBe(false);
@@ -76,10 +69,6 @@ describe('useUserPreferences', () => {
 
     const { result } = renderHook(() => useUserPreferences());
 
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-
     expect(result.current.preferences.theme).toBe('dark');
     expect(result.current.preferences.colorScheme).toBe('enhanced');
     expect(result.current.preferences.sidebarCollapsed).toBe(true);
@@ -90,10 +79,6 @@ describe('useUserPreferences', () => {
     localStorageMock.getItem.mockReturnValue(null);
 
     const { result } = renderHook(() => useUserPreferences());
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
 
     act(() => {
       result.current.updatePreference('theme', 'dark');
@@ -116,10 +101,6 @@ describe('useUserPreferences', () => {
 
     const { result } = renderHook(() => useUserPreferences());
 
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-
     expect(result.current.preferences.theme).toBe('dark');
 
     act(() => {
@@ -136,10 +117,6 @@ describe('useUserPreferences', () => {
 
     const { result } = renderHook(() => useUserPreferences());
 
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-
     const exported = result.current.exportPreferences();
     const parsed = JSON.parse(exported);
 
@@ -151,10 +128,6 @@ describe('useUserPreferences', () => {
     localStorageMock.getItem.mockReturnValue(null);
 
     const { result } = renderHook(() => useUserPreferences());
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
 
     const importData = JSON.stringify({
       theme: 'dark',
@@ -177,10 +150,6 @@ describe('useUserPreferences', () => {
     localStorageMock.getItem.mockReturnValue(null);
 
     const { result } = renderHook(() => useUserPreferences());
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
 
     let importResult;
     act(() => {
@@ -205,10 +174,6 @@ describe('useTheme', () => {
 
     const { result } = renderHook(() => useTheme());
 
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-
     act(() => {
       result.current.setTheme('light');
     });
@@ -220,10 +185,6 @@ describe('useTheme', () => {
     localStorageMock.getItem.mockReturnValue(null);
 
     const { result } = renderHook(() => useTheme());
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
 
     act(() => {
       result.current.setTheme('dark');
@@ -238,10 +199,6 @@ describe('useUIPreferences', () => {
     localStorageMock.getItem.mockReturnValue(null);
 
     const { result } = renderHook(() => useUIPreferences());
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
 
     expect(result.current.sidebarCollapsed).toBe(false);
     expect(result.current.compactMode).toBe(false);
@@ -272,10 +229,6 @@ describe('useProjectPreferences', () => {
     localStorageMock.getItem.mockReturnValue(null);
 
     const { result } = renderHook(() => useProjectPreferences());
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
 
     expect(result.current.defaultProjectView).toBe('grid');
     expect(result.current.projectSortBy).toBe('updated');

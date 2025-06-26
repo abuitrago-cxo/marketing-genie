@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { getApiBaseUrl } from '../config/api';
 
 export interface SpecializedGraph {
   id: string;
@@ -72,7 +73,7 @@ interface UseSpecializedGraphsReturn {
   getGraphMetadata: (graphId: string) => Promise<SpecializedGraph | null>;
 }
 
-const API_BASE_URL = '/api/v1/specialized';
+const API_BASE_URL = `${getApiBaseUrl()}/specialized`;
 
 export const useSpecializedGraphs = (): UseSpecializedGraphsReturn => {
   const [graphs, setGraphs] = useState<SpecializedGraph[]>([]);

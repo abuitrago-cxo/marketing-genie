@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +12,7 @@ import {
   Search,
   Filter,
   MoreHorizontal,
+  Pencil,
   Calendar,
   Users,
   GitBranch,
@@ -24,6 +26,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { EditProjectDialog } from '@/components/projects/EditProjectDialog';
 import {
   useProjects,
   Project,
@@ -35,6 +38,7 @@ import {
   ProjectOrchestratorRequest,
 } from '@/hooks/useProjects';
 import { AnalysisResultsModal } from '@/components/analysis/AnalysisResultsModal';
+import { AgentTaskResultsModal } from '@/components/agent/AgentTaskResultsModal';
 import { useToast } from '@/components/ui/toast';
 
 interface ProjectsPageProps {
@@ -103,8 +107,11 @@ const ProjectCard: React.FC<{
   onAnalyzeTasks: (id: number) => void;
   onAnalyzeResearch: (id: number) => void;
   onAnalyzeQA: (id: number) => void;
+  onRunCodeEngineer: (id: number) => void;
   onOrchestrate: (id: number) => void;
   onShowResults: (id: number) => void;
+  isEngineering: boolean;
+  onEdit?: (project: UIProject) => void;
   hasAnalysisResults: boolean;
 }> = ({
   project,
@@ -114,8 +121,11 @@ const ProjectCard: React.FC<{
   onAnalyzeTasks,
   onAnalyzeResearch,
   onAnalyzeQA,
+  onRunCodeEngineer,
+  isEngineering,
   onOrchestrate,
   onShowResults,
+  onEdit,
   hasAnalysisResults
 }) => {
   const formatDate = (date: Date) => {
@@ -142,6 +152,11 @@ const ProjectCard: React.FC<{
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
+            {onEdit && (
+              <button onClick={() => onEdit(project)} className="p-1 hover:bg-muted rounded">
+                <Pencil className="h-4 w-4" />
+              </button>
+            )}
             {statusIcons[project.status]}
             <CardTitle className="text-lg">{project.name}</CardTitle>
             <Button
@@ -216,8 +231,18 @@ const ProjectCard: React.FC<{
                 <Star className="h-4 w-4" />
               </Button>
             )}
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" onClick={() => onEdit(project)}>
               <MoreHorizontal className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => onAnalyze(project.id)} className="mr-2">
+              Analyze Code
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => onRunCodeEngineer(project.id)} className="mr-2" disabled={isEngineering}>
+              {isEngineering ? (
+                <span className="flex items-center"><Loader2 className="h-4 w-4 animate-spin mr-1"/>Running...</span>
+              ) : (
+                'Code Engineer'
+              )}
             </Button>
           </div>
         </div>
@@ -296,34 +321,60 @@ const ProjectCard: React.FC<{
   );
 };
 
-export const ProjectsPage: React.FC<ProjectsPageProps> = ({ activeTab = 'current' }) => {
+export const ProjectsPage: React.FC<{ activeTab?: 'current' | 'archived' }> = ({ activeTab = 'current' }) => {
   const {
     projects: apiProjects,
     loading,
     error,
     fetchProjects,
     createProject,
+    updateProject,
     analyzeCodebase,
+    getAnalysisStatus,
     analyzeDocumentation,
     analyzeTasks,
     analyzeResearch,
     analyzeQA,
+    runCodeEngineer,
     orchestrateProject,
   } = useProjects();
   const { addToast, ToastContainer } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
+  const [engineeringProjects, setEngineeringProjects] = useState<Set<number>>(new Set());
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<'current' | 'archived'>(activeTab);
   const [starredProjects, setStarredProjects] = useState<Set<number>>(new Set());
+  const [editingProject, setEditingProject] = useState<UIProject | null>(null);
+
+  const location = useLocation();
+  const runEngineerId = useMemo(() => {
+    const param = new URLSearchParams(location.search).get('runEngineer');
+    return param ? parseInt(param, 10) : null;
+  }, [location]);
+  const [runEngineerTriggered, setRunEngineerTriggered] = useState(false);
+
+  // Auto-launch Code Engineer after projects load
+  useEffect(() => {
+    if (runEngineerId && !runEngineerTriggered && projects.length) {
+      const exists = projects.some(p => p.id === runEngineerId);
+      if (exists) {
+        handleRunCodeEngineer(runEngineerId);
+        setRunEngineerTriggered(true);
+      }
+    }
+  }, [runEngineerId, runEngineerTriggered, projects]);
+  const [editOpen, setEditOpen] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<Map<number, CodebaseAnalysisResponse>>(new Map());
   const [docAnalysisResults, setDocAnalysisResults] = useState<Map<number, DocumentationAnalysisResponse>>(new Map());
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [selectedProjectForAnalysis, setSelectedProjectForAnalysis] = useState<UIProject | null>(null);
 
   // Convert API projects to UI projects
-  const projects = apiProjects.map(convertToUIProject).map(project => ({
+  const projects = useMemo(() => apiProjects.map(convertToUIProject).map(project => ({
     ...project,
     isStarred: starredProjects.has(project.id)
-  }));
+  })), [apiProjects, starredProjects]);
 
   const handleStarToggle = (projectId: number) => {
     setStarredProjects(prev => {
@@ -510,6 +561,26 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ activeTab = 'current
     }
   };
 
+  const handleRunCodeEngineer = async (projectId: number) => {
+  setEngineeringProjects(prev => new Set(prev).add(projectId));
+    addToast({ type: 'info', title: 'Code Engineer', description: 'Starting Code Engineer task...' });
+    const res = await runCodeEngineer(projectId);
+  
+    if (res?.success) {
+    if (res.task_id) {
+      setCurrentTaskId(res.task_id as string);
+      setTaskModalOpen(true);
+    }
+    // keep spinner for a short period then remove
+    setTimeout(() => {
+      setEngineeringProjects(prev => { const n=new Set(prev); n.delete(projectId); return n;});
+    }, 5000);
+      addToast({ type: 'success', title: 'Code Engineer', description: 'Task created successfully.' });
+    } else {
+      addToast({ type: 'error', title: 'Code Engineer', description: res?.detail || 'Failed to start task' });
+    }
+  };
+
   const handleOrchestrate = async (projectId: number) => {
     try {
       const project = projects.find(p => p.id === projectId);
@@ -679,9 +750,15 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ activeTab = 'current
                   onAnalyzeTasks={handleAnalyzeTasks}
                   onAnalyzeResearch={handleAnalyzeResearch}
                   onAnalyzeQA={handleAnalyzeQA}
+                  onRunCodeEngineer={handleRunCodeEngineer}
                   onOrchestrate={handleOrchestrate}
                   onShowResults={handleShowAnalysisResults}
+                  onEdit={(p) => {
+                    setEditingProject(p);
+                    setEditOpen(true);
+                  }}
                   hasAnalysisResults={analysisResults.has(project.id) || docAnalysisResults.has(project.id)}
+                  isEngineering={engineeringProjects.has(project.id)}
                 />
               ))}
             </ResponsiveGrid>
@@ -706,9 +783,15 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ activeTab = 'current
                   onAnalyzeTasks={handleAnalyzeTasks}
                   onAnalyzeResearch={handleAnalyzeResearch}
                   onAnalyzeQA={handleAnalyzeQA}
+                  onRunCodeEngineer={handleRunCodeEngineer}
                   onOrchestrate={handleOrchestrate}
                   onShowResults={handleShowAnalysisResults}
+                  onEdit={(p) => {
+                    setEditingProject(p);
+                    setEditOpen(true);
+                  }}
                   hasAnalysisResults={analysisResults.has(project.id) || docAnalysisResults.has(project.id)}
+                  isEngineering={engineeringProjects.has(project.id)}
                 />
               ))}
             </ResponsiveGrid>
@@ -749,8 +832,30 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ activeTab = 'current
         />
       )}
 
+      {/* Edit Project Dialog */}
+      <EditProjectDialog
+        project={editingProject}
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open);
+          if (!open) setEditingProject(null);
+        }}
+        onSave={async (id, data) => {
+          await updateProject(id, data);
+          setEditOpen(false);
+          await fetchProjects();
+        }}
+      />
+
       {/* Toast Notifications */}
       <ToastContainer />
+
+      {/* Agent Task Results Modal */}
+      <AgentTaskResultsModal
+        isOpen={taskModalOpen}
+        taskId={currentTaskId}
+        onClose={() => setTaskModalOpen(false)}
+      />
     </div>
   );
 };

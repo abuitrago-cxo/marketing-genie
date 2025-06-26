@@ -24,6 +24,12 @@ from .integration_pattern import (
     create_integrated_node
 )
 
+from .graphiti_memory_manager import (
+    GraphitiMemoryManager,
+    get_graphiti_memory_manager,
+    close_graphiti_memory_manager
+)
+
 __all__ = [
     "LongTermMemoryManager",
     "Memory",
@@ -34,5 +40,8 @@ __all__ = [
     "get_short_memory_manager",
     "close_short_memory_manager",
     "IntegratedNodePattern",
-    "create_integrated_node"
+    "create_integrated_node",
+    "GraphitiMemoryManager",
+    "get_graphiti_memory_manager",
+    "close_graphiti_memory_manager"
 ]

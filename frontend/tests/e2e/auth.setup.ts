@@ -6,7 +6,14 @@ dotenv.config();
 
 const authFile = 'playwright/.auth/user.json';
 
-setup('authenticate', async ({ page }) => {
+setup('authenticate', async ({ page, context }) => {
+  // Allow disabling Auth0 flow for local/dev environments where PAT flow is used
+  if (process.env.PLAYWRIGHT_AUTH === 'disabled') {
+    console.log('[auth.setup] PLAYWRIGHT_AUTH=disabled – skipping Auth0 login flow.');
+    // Still persist an empty storage state so other specs can reuse it
+    await context.storageState({ path: authFile });
+    return;
+  }
   // Check if environment variables are set
   const email = process.env.VITE_TEST_AUTH_EMAIL;
   const password = process.env.VITE_TEST_AUTH_PASSWORD;

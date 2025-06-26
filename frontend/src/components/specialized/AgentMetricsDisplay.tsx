@@ -15,6 +15,8 @@ import {
   Activity
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getApiBaseUrl } from '../../config/api';
+import ErrorState from '../ui/ErrorState';
 
 interface AgentPerformance {
   total_executions: number;
@@ -161,7 +163,7 @@ export const AgentMetricsDisplay: React.FC<AgentMetricsDisplayProps> = ({
   const fetchMetrics = async () => {
     try {
       setError(null);
-      const response = await fetch('/api/v1/specialized/metrics/agents');
+      const response = await fetch(`${getApiBaseUrl()}/specialized/metrics/agents`);
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -212,23 +214,11 @@ export const AgentMetricsDisplay: React.FC<AgentMetricsDisplayProps> = ({
 
   if (error) {
     return (
-      <Card className={className}>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <AlertCircle size={16} className="text-red-500" />
-            Agent Performance Metrics
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-4">
-            <p className="text-sm text-muted-foreground mb-3">{error}</p>
-            <Button variant="outline" size="sm" onClick={handleRefresh}>
-              <RefreshCw size={14} className="mr-2" />
-              Retry
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <ErrorState
+        message={error}
+        onRetry={handleRefresh}
+        className={className}
+      />
     );
   }
 

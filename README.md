@@ -1,6 +1,6 @@
-# AI Agent Assistant - Professional Multi-Agent System
+# AI Agent Assistant twelvebros - Professional Multi-Agent System
 
-A **production-ready AI agent assistant** for automated software project management with 24/7 support, autonomous operation, and enterprise-grade features. This comprehensive system features a **6-graph specialization architecture**, complete Auth0 integration, GitHub project management, and a professional UI/UX designed for real-world deployment.
+A **production-ready AI agent assistant** for automated software project management with 24/7 support, autonomous operation, and enterprise-grade features. This comprehensive system features a **6-graph specialization architecture**, complete Firebase Auth integration, GitHub project management, and a professional UI/UX designed for real-world deployment.
 
 ## 🔍 **SISTEMA AUDITADO Y VERIFICADO - ENERO 2025**
 
@@ -42,7 +42,7 @@ Complete multi-agent orchestration with LangSmith traceability and real-time coo
 - **🔄 Dynamic Switching**: Seamless toggle between single-agent and multi-agent modes
 
 ### 🔐 **Enterprise Authentication & Integration**
-- **Auth0 Integration**: Complete SSO with GitHub OAuth for repository access
+- **Firebase Auth Integration**: Complete SSO with GitHub OAuth for repository access
 - **GitHub Project Management**: Repository import, analysis, and automated project planning
 - **User Management**: Role-based access control and team collaboration features
 - **Security**: JWT token validation, protected routes, and secure API endpoints
@@ -70,7 +70,7 @@ Complete multi-agent orchestration with LangSmith traceability and real-time coo
 ### 🔗 **Enterprise Integrations**
 
 - **GitHub Integration**: Repository import, analysis, and automated project planning
-- **Auth0 Authentication**: Enterprise SSO with role-based access control
+- **Firebase Authentication**: Enterprise SSO with role-based access control
 - **Database Management**: PostgreSQL with connection pooling and health monitoring
 - **Cloud Services**: AWS, Azure, GCP integration support
 - **API Management**: RESTful APIs with comprehensive documentation
@@ -126,6 +126,12 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 # Optional (for monitoring)
 LANGSMITH_API_KEY=your_langsmith_api_key_here
+
+# Auth0 Configuration (Required for Authentication)
+AUTH0_DOMAIN=your_auth0_domain.auth0.com
+AUTH0_CLIENT_ID=your_auth0_client_id
+AUTH0_CLIENT_SECRET=your_auth0_client_secret
+AUTH0_AUDIENCE=your_auth0_api_audience # e.g., https://your-api-identifier
 ```
 
 ### 2. Build and Deploy
@@ -137,8 +143,24 @@ docker build -t gemini-fullstack-langgraph-enhanced .
 docker-compose up -d
 ```
 
-### 3. Access the Application
-- **Main Application**: http://localhost:8123/app/
+### 2. Firebase Auth Setup (Required for Login)
+
+Before running the application, you need to configure Firebase Auth for authentication and GitHub integration:
+
+1.  **Create a Firebase Project**: If you don't have one, sign up at [Firebase](https://firebase.google.com/) and create a new project.
+2.  **Set up Firebase Authentication**: 
+    *   In the Firebase console, navigate to "Authentication" and enable the sign-in methods you want to use (e.g., Email/Password, Google, GitHub).
+    *   For GitHub, you'll need to provide the Client ID and Client Secret from your GitHub OAuth App.
+3.  **Configure your application**:
+    *   Obtain your Firebase project configuration (apiKey, authDomain, projectId, etc.) from the Firebase console (Project settings > General > Your apps > Web app).
+    *   This configuration will be used in your frontend and backend.
+4.  **Update Environment Variables**:
+    *   Store your Firebase configuration securely, typically using environment variables.
+    *   For the frontend (Vite + React), you'll use variables like `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, etc., in an `.env` file in the `frontend` directory.
+    *   For the backend, you'll configure Firebase Admin SDK, usually with a service account key file or environment variables.
+
+### 3. Run the Application (Docker Compose)
+- **Main Application**: http://localhost:8123/app/ (Login will redirect to Firebase Auth if not configured or if .env variables are missing)
 - **API Health Check**: http://localhost:8123/api/v1/enhanced/health
 - **Specialized Agents Health**: http://localhost:8123/api/v1/specialized/health
 - **Agent Metrics**: http://localhost:8123/api/v1/specialized/metrics/agents
@@ -148,7 +170,7 @@ docker-compose up -d
 
 #### **Authentication & Setup**
 1. Open the application at `http://localhost:8123/app/`
-2. **Login with Auth0**: Click "Log In" and authenticate
+2. **Login with Firebase Auth**: Click "Log In" and authenticate
 3. **Connect GitHub**: Navigate to Integrations → GitHub and connect your account
 4. **Configure Agents**: Visit Settings to customize agent behavior
 

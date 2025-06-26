@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 # Create router for enhanced endpoints
 enhanced_router = APIRouter(prefix="/api/v1/enhanced", tags=["enhanced"])
 
+# --- Simple in-memory task registry (prototype) ---
+# In production this should be replaced by persistent task tracking (DB or queue)
+_task_registry: Dict[str, Dict[str, Any]] = {}
+
 # Helper function to get LLM status
 def get_llm_status():
     """Get LLM status using the llm_manager"""
@@ -212,19 +216,60 @@ async def get_agent_tasks(agent_type: str):
 
 @enhanced_router.post("/agents/{agent_type}/tasks")
 async def create_agent_task(agent_type: str, task_data: Dict[str, Any]):
-    """Create a new task for a specific agent"""
+    """Create a new task for a specific agent using direct dispatch"""
     try:
-        # This would be implemented with actual task creation
-        # For now, return mock response
-        return {
-            "success": True,
-            "task_id": "mock_task_id",
-            "agent_type": agent_type,
-            "message": "Task created successfully"
-        }
+        from agent.router import AgentType  # Enum of agents
+
+        # Validate and convert agent_type string to AgentType enum
+        try:
+            enum_agent_type = AgentType(agent_type)
+        except ValueError:
+            raise HTTPException(status_code=404, detail=f"Unknown agent type '{agent_type}'")
+
+        task_id = agent_router.dispatch_direct_task(enum_agent_type, task_data)
+        if task_id:
+            # Store task entry in registry with mock pending status
+            _task_registry[task_id] = {
+                "agent_type": agent_type,
+                "status": "pending",
+                "input": task_data,
+                "result": None
+            }
+        if task_id:
+            return {
+                "success": True,
+                "task_id": task_id,
+                "agent_type": agent_type,
+                "message": "Task created successfully"
+            }
+        else:
+            raise HTTPException(status_code=400, detail=f"Failed to create task for {agent_type}")
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to create agent task: {e}")
+        logger.error(f"Failed to create task for {agent_type}: {e}")
         raise HTTPException(status_code=500, detail="Failed to create agent task")
+
+# ---------------- Task status endpoint ----------------
+@enhanced_router.get("/agents/tasks/{task_id}")
+async def get_agent_task_status(task_id: str):
+    """Return status/result for a previously created agent task."""
+    try:
+        task = _task_registry.get(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        # For demo, after first read mark completed with mock result
+        if task["status"] == "pending":
+            task["status"] = "completed"
+            task["result"] = {"message": "Code engineer task finished successfully"}
+
+        return {"success": True, **task, "task_id": task_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get task {task_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get task status")
 
 @enhanced_router.get("/metrics/performance")
 async def get_performance_metrics():

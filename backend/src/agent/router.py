@@ -22,6 +22,7 @@ class AgentType(Enum):
     COMMUNICATION = "communication"
     CODE_REVIEW = "code_review"
     DOCUMENTATION = "documentation"
+    CODE_ENGINEER = "code_engineer"
 
 class TaskComplexity(Enum):
     """Task complexity levels"""
@@ -156,6 +157,22 @@ class KeywordBasedClassifier(BaseTaskClassifier):
                     r"api\s+(?:documentation|docs)",
                     r"write\s+(?:guide|tutorial|manual)"
                 ]
+            },
+            AgentType.CODE_ENGINEER: {
+                "keywords": [
+                    "code engineer", "improve code", "refactor", "optimize",
+                    "codebase", "project structure", "apply patterns", "enhance code",
+                    "technical debt", "best practices", "project_id"
+                ],
+                "patterns": [
+                    r"improve\s+(?:code|codebase|project)",
+                    r"refactor\s+(?:code|project)",
+                    r"optimize\s+(?:codebase|performance)",
+                    r"apply\s+(?:best\s+practices|design\s+patterns)",
+                    r"code\s+engineer\s+task",
+                    r"fix\s+bug\s+in\s+project",
+                    r"add\s+feature\s+to\s+project"
+                ]
             }
         }
     
@@ -285,6 +302,15 @@ class AgentRouter:
                 complexity_level=TaskComplexity.MODERATE,
                 tools=["code_analysis", "security_scan", "quality_check"],
                 priority=2
+            ),
+            AgentCapability(
+                agent_type=AgentType.CODE_ENGINEER,
+                name="Code Engineer Agent",
+                description="Performs codebase improvements, refactoring, and applies best practices.",
+                keywords=["code engineer", "improve code", "refactor", "optimize codebase", "project structure", "apply patterns"],
+                complexity_level=TaskComplexity.COMPLEX,
+                tools=["file_system_access", "code_analysis", "code_generation", "project_management_api"], # Placeholder tools
+                priority=3 # High priority for direct engineering tasks
             )
         ]
         
@@ -370,6 +396,23 @@ class AgentRouter:
             },
             "total_active_tasks": sum(self.agent_load.values())
         }
+
+
+    def dispatch_direct_task(self, agent_type: AgentType, task_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Dispatch a task directly to a specified agent type without classification."""
+        if agent_type not in self.agent_capabilities:
+            logger.error(f"Cannot dispatch task: AgentType '{agent_type.value}' not found.")
+            return None
+
+        import uuid
+        task_id = str(uuid.uuid4())
+        logger.info(
+            f"Dispatching direct task {task_id} to agent {agent_type.value}. "
+            f"Task Data: {task_data}, Context: {context}"
+        )
+        # TODO: integrate with actual agent execution framework
+        self.update_agent_load(agent_type, 1)
+        return task_id
 
 # Global agent router instance
 agent_router = AgentRouter()

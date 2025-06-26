@@ -1,6 +1,6 @@
 # AI Agent Assistant - Project Planning & Architecture
 
-## 🎯 **ESTADO ACTUAL: 95% COMPLETADO - AUDITORÍA COMPLETA REALIZADA**
+## 🎯 **ESTADO ACTUAL: 80% COMPLETADO (Enfocando en Integración Firebase Auth y Onboarding) - AUDITORÍA REALIZADA**
 
 ### **📊 Progreso por Componente (Actualizado 2025-01-27):**
 
@@ -67,13 +67,37 @@
 - 🔧 **Redis**: Estado desconocido, requiere verificación
 - 📊 **Datos**: Base limpia, necesita datos de prueba
 
-### **🚧 TRABAJO RESTANTE (5%)**
+### **🚧 TRABAJO RESTANTE (20%)**
 
 **Correcciones Críticas Pendientes:**
 1. ✅ **Verificar Docker/Redis** - Reiniciar servicios y validar conectividad
 2. ✅ **Crear Datos de Prueba** - Poblar base con proyectos de ejemplo
 3. ✅ **Testing Completo** - Ejecutar suite de tests y validar funcionalidad
 4. ✅ **Documentación Final** - Actualizar estado y porcentajes
+
+### **🚀 FOCO ACTUAL: Cierre y Mejora Integral del Feature de Proyectos**
+
+El objetivo inmediato es alcanzar el **100 % de funcionalidad, usabilidad y fiabilidad** en todo lo relacionado con la gestión de proyectos:
+
+1. UI/UX de edición y enlace de repositorios (modal, validaciones, toasts).
+2. Sincronización frontend ↔️ backend al actualizar proyectos.
+3. Flujos completos: crear → editar/enlazar → analizar → orquestar.
+4. Pruebas unitarias y E2E específicas del feature.
+5. Documentación y ejemplos de uso actualizados.
+
+**Objetivo Principal**: Implementar un flujo de onboarding completo y robusto que permita a los usuarios autenticarse usando Firebase Auth (con opción de GitHub OAuth) e importar/enlazar sus repositorios de GitHub de manera intuitiva desde la interfaz gráfica.
+
+**Componentes Clave Pendientes:**
+- **Frontend - Integración Firebase SDK**: Implementar la lógica para el inicio/cierre de sesión, manejo de tokens JWT, y redirecciones necesarias utilizando el SDK de Firebase para React.
+- **Frontend - UI de Onboarding y Vinculación de GitHub**:
+    - Desarrollar la interfaz para guiar al usuario en la conexión de su cuenta de GitHub (si aún no está vinculada a través de Auth0).
+    - Mostrar una lista de los repositorios del usuario.
+    - Permitir la selección e importación/vinculación de repositorios al sistema.
+- **Frontend - Estado de Conexión**: Mostrar claramente en la UI si el usuario está autenticado y si su cuenta de GitHub está conectada.
+- **Backend - Endpoints Seguros**: Asegurar que todos los endpoints relacionados con la gestión de proyectos y acceso a repositorios estén protegidos y requieran un JWT válido.
+- **Pruebas (Pytest)**: Desarrollar pruebas unitarias y de integración para la lógica de Firebase Auth en el backend (verificación de JWT, manejo de JWKS) y para los endpoints seguros.
+- **Documentación Completa**: Actualizar `README.md` con instrucciones detalladas sobre el flujo de onboarding, desde el login inicial hasta la importación de proyectos. Incluir una sección de troubleshooting para problemas comunes de configuración de Firebase Auth.
+- **(Opcional) Fallback para Repositorios Públicos**: Evaluar e implementar la capacidad de analizar repositorios públicos de GitHub sin necesidad de autenticación completa, si se considera prioritario.
 
 ## Repository Analysis Summary
 
@@ -362,7 +386,7 @@
 - ✅ **HORIZONTAL SCROLLING**: Responsive grid system with mobile-first design
 - ✅ **MOBILE RESPONSIVE**: Complete mobile, tablet, desktop optimization
 - ✅ **PROFESSIONAL PAGES**: Projects, Workflows, Agents, Integrations, Settings, Notifications
-- ✅ **AUTH0 INTEGRATION**: Complete authentication with GitHub OAuth
+- ✅ **Firebase Auth INTEGRATION**: Complete authentication with GitHub OAuth
 - ✅ **GITHUB PROJECT MANAGEMENT**: Repository import, analysis, and project planning
 - ✅ **BACKEND-FRONTEND INTEGRATION**: All APIs connected to real UI components
 - ✅ **PRODUCTION-READY UX**: Professional user experience ready for deployment
@@ -410,7 +434,7 @@
 ### 🎯 Arquitectura Integrada de 6 Grafos Especializados
 
 **Enfoque Estratégico**:
-- ❌ **NO crear nodos para GitHub** - usar Auth0 para importación directa
+- ❌ **NO crear nodos para GitHub** - usar Firebase Auth para importación directa
 - ✅ **6 grafos especializados** que funcionan como "agentes" independientes
 - ✅ **Integración completa** con herramientas, MCP y memoria existentes
 - ✅ **Patrones LangGraph probados**: Routing, Orchestrator-Worker, Evaluator-Optimizer
@@ -474,7 +498,7 @@
 | T502| Dashboard integrado de proyecto               | ALTA      | Pendiente   | Cascade     | Vista consolidada de todos los grafos      |
 | T503| Testing end-to-end completo                   | ALTA      | Pendiente   | Cascade     | Todos los grafos + herramientas + memoria  |
 | T504| Documentación y optimización                  | MEDIA     | Pendiente   | Cascade     | Guías de uso y optimización de performance |
-| T505| Integración Auth0 + GitHub para importación   | ALTA      | Pendiente   | Cascade     | Importación directa sin nodos GitHub       |
+| T505| Integración Firebase Auth + GitHub para importación   | ALTA      | Pendiente   | Cascade     | Importación directa sin nodos GitHub       |
 
 ### 🎯 Especificación Detallada de los 6 Grafos Integrados
 
@@ -619,7 +643,7 @@
 **What Was Achieved**:
 - ✅ **Architecture Excellence**: Pure LangGraph node-based design with 4 specialized agents
 - ✅ **Professional UI/UX**: Complete responsive interface with 20+ functional pages
-- ✅ **Enterprise Integration**: Auth0 authentication with GitHub project management
+- ✅ **Enterprise Integration**: Firebase Auth authentication with GitHub project management
 - ✅ **Production Quality**: Enterprise-ready with comprehensive monitoring and documentation
 - ✅ **Research-Driven**: Applied best practices from leading open-source projects
 - ✅ **User Experience**: Intuitive interface with real-time feedback and professional design
@@ -724,8 +748,8 @@ The project successfully implemented a unified wrapper architecture that preserv
 - **Status**: State persistence working correctly
 
 **4. Authentication Integration** ✅ IMPLEMENTED
-- **Issue**: No Auth0 or GitHub integration
-- **Solution**: Complete Auth0 integration with GitHub OAuth
+- **Issue**: No Firebase Auth or GitHub integration
+- **Solution**: Complete Firebase Auth integration with GitHub OAuth
 - **Status**: Full authentication system operational
 
 ```
@@ -837,8 +861,8 @@ The project successfully implemented a unified wrapper architecture that preserv
 - **Status**: State persistence working correctly
 
 **4. Authentication Integration** ✅ IMPLEMENTED
-- **Issue**: No Auth0 or GitHub integration
-- **Solution**: Complete Auth0 integration with GitHub OAuth
+- **Issue**: No Firebase Auth or GitHub integration
+- **Solution**: Complete Firebase Auth integration with GitHub OAuth
 - **Status**: Full authentication system operational
 
 ```
@@ -853,3 +877,13 @@ The project successfully implemented a unified wrapper architecture that preserv
 7. Implementar WebSocket para streaming de mensajes en tiempo real.
 
 ```
+
+```
+
+**Actualización 2025-06-15:** Integración GitHub mejorada – la importación de repos ahora dispara automáticamente una tarea del agente **Code Engineer** para mejorar el proyecto recién creado.
+
+Instruction: Replace remaining Auth0 references with Firebase Auth in System Audit section.
+
+Code Edit:
+```
+

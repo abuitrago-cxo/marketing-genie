@@ -4,6 +4,7 @@ volumes:
 services:
   langgraph-redis:
     image: docker.io/redis:6
+    container_name: langgraph-redis
     healthcheck:
       test: redis-cli ping
       interval: 5s
@@ -11,6 +12,7 @@ services:
       retries: 5
   langgraph-postgres:
     image: docker.io/postgres:16
+    container_name: langgraph-postgres
     ports:
       - "5433:5432"
     environment:
@@ -26,19 +28,36 @@ services:
       retries: 5
       interval: 5s
   langgraph-api:
-    image: gemini-fullstack-langgraph
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY}
+        - VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN}
+        - VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID}
+        - VITE_FIREBASE_STORAGE_BUCKET=${VITE_FIREBASE_STORAGE_BUCKET}
+        - VITE_FIREBASE_MESSAGING_SENDER_ID=${VITE_FIREBASE_MESSAGING_SENDER_ID}
+        - VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}
+        - VITE_FIREBASE_MEASUREMENT_ID=${VITE_FIREBASE_MEASUREMENT_ID}
+    image: gemini-fullstack-langgraph # Keep the image name for tagging
+    env_file:
+      - ./.env
+    container_name: langgraph-api
     ports:
       - "8123:8000"
+      - "5555:5555" # Expose Zep port
     depends_on:
       langgraph-redis:
         condition: service_healthy
       langgraph-postgres:
         condition: service_healthy
+      zep:
+        condition: service_healthy
+      graphiti-mcp-server:
+        condition: service_healthy
     environment:
       # Multi-LLM Provider Support
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
 
       # LangSmith Integration
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
@@ -57,6 +76,11 @@ services:
       MAX_CONCURRENT_TASKS: "10"
       HEALTH_CHECK_INTERVAL: "30"
 
+      # Zep/Graphiti Configuration
+      ZEP_API_URL: http://zep:8000
+      ZEP_API_KEY: ${ZEP_API_KEY:-changeme}
+      GRAPHITI_MCP_URL: http://graphiti-mcp-server:8000
+
     # Health check for the enhanced API
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/enhanced/health"]
@@ -68,7 +92,7 @@ services:
   # Redis Admin Interface (Optional - for development)
   redis-commander:
     image: rediscommander/redis-commander:latest
-    hostname: redis-commander
+    container_name: redis-commander
     ports:
       - "8081:8081"
     environment:
@@ -78,9 +102,82 @@ services:
     profiles:
       - dev
 
+  zep:
+    image: zepai/zep:latest
+    env_file:
+      - ./.env
+    container_name: zep
+    ports:
+      - "8000:8000"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      ZEP_STORE_TYPE: neo4j
+      ZEP_NEO4J_URL: bolt://neo4j:7687
+      ZEP_NEO4J_USER: neo4j
+      ZEP_NEO4J_PASSWORD: password
+      ZEP_LLM_PROVIDER: gemini
+      GOOGLE_API_KEY: ${GEMINI_API_KEY}
+      ZEP_NLP_SERVER_URL: http://zep-nlp-server:8000
+      ZEP_API_SECRET: ${ZEP_API_SECRET:-changeme}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/password
+    healthcheck:
+      test: ["CMD-SHELL", "wget -O /dev/null http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  graphiti-mcp-server:
+    build:
+      context: ./backend/src/graphiti_fork/mcp_server
+      dockerfile: Dockerfile
+    container_name: graphiti-mcp-server
+    env_file:
+      - ./.env
+    ports:
+      - "8001:8000"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      # LLM Configuration
+      LLM_PROVIDER: gemini
+      GOOGLE_API_KEY: ${GEMINI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-} # Optional
+      MODEL_NAME: "gemini-1.5-flash-latest"
+      EMBEDDER_MODEL_NAME: "text-embedding-004"
+
+      # Neo4j Connection
+      NEO4J_URI: ${NEO4J_URI}
+      NEO4J_USER: ${NEO4J_USER}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   # PostgreSQL Admin Interface (Optional - for development)
   pgadmin:
     image: dpage/pgadmin4:latest
+    container_name: pgadmin
     ports:
       - "8080:80"
     environment:
@@ -95,6 +192,7 @@ services:
   # Nginx Load Balancer (Optional - for production)
   nginx:
     image: nginx:alpine
+    container_name: nginx
     ports:
       - "80:80"
       - "443:443"

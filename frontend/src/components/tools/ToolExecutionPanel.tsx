@@ -15,6 +15,8 @@ import {
   Globe,
   FolderOpen
 } from 'lucide-react';
+import { getApiBaseUrl } from '@/config/api';
+import ErrorState from '@/components/ui/ErrorState';
 
 interface ToolCapability {
   name: string;
@@ -52,6 +54,7 @@ const ToolExecutionPanel: React.FC<ToolExecutionPanelProps> = ({ className }) =>
   const [toolResults, setToolResults] = useState<ToolResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTools();
@@ -59,7 +62,7 @@ const ToolExecutionPanel: React.FC<ToolExecutionPanelProps> = ({ className }) =>
 
   const fetchTools = async () => {
     try {
-      const response = await fetch('/api/v1/enhanced/tools/registry');
+      const response = await fetch(`${getApiBaseUrl()}/enhanced/tools/registry`);
       const data = await response.json();
       
       if (data.success) {
@@ -68,13 +71,14 @@ const ToolExecutionPanel: React.FC<ToolExecutionPanelProps> = ({ className }) =>
       }
     } catch (error) {
       console.error('Failed to fetch tools:', error);
+      setError('Failed to fetch tools');
     }
   };
 
   const executeToolAction = async (toolName: string, action: string, parameters: Record<string, any>) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/enhanced/tools/execute', {
+      const response = await fetch(`${getApiBaseUrl()}/enhanced/tools/execute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -97,6 +101,7 @@ const ToolExecutionPanel: React.FC<ToolExecutionPanelProps> = ({ className }) =>
       
     } catch (error) {
       console.error('Tool execution failed:', error);
+      setError('Tool execution failed');
     } finally {
       setLoading(false);
     }
@@ -129,6 +134,10 @@ const ToolExecutionPanel: React.FC<ToolExecutionPanelProps> = ({ className }) =>
         return 'bg-gray-500';
     }
   };
+
+  if (error) {
+    return <ErrorState message={error} onRetry={fetchTools} />;
+  }
 
   return (
     <div className={`space-y-4 ${className}`}>

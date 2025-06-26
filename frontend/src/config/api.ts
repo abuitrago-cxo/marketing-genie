@@ -21,6 +21,10 @@ export const getApiBaseUrl = (): string => {
 
 // Specific API endpoints
 export const API_ENDPOINTS = {
+  AGENTS: {
+    BASE: '/api/v1/enhanced/agents',
+    CODE_ENGINEER_TASKS: '/api/v1/enhanced/agents/code_engineer/tasks'
+  },
   // Enhanced endpoints
   ENHANCED: {
     TOOLS_REGISTRY: `${getApiBaseUrl()}/enhanced/tools/registry`,
@@ -49,6 +53,7 @@ export const API_ENDPOINTS = {
   GITHUB: {
     BASE: `${getApiBaseUrl()}/github`,
     REPOSITORIES: `${getApiBaseUrl()}/github/repositories`,
-    CONNECTION_STATUS: `${getApiBaseUrl()}/github/connection/status`,
+    TOKEN: `${getApiBaseUrl()}/github/token`,
+    CONNECTION_STATUS: `${getApiBaseUrl()}/github/connection-status`,
   },
 };

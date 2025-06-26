@@ -21,6 +21,7 @@ import {
   Settings
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+// import { AuthNav } from '@/components/auth/AuthNav';
 
 // Types for the enhanced layout
 interface SystemStatus {
@@ -461,6 +462,7 @@ export const EnhancedLayout: React.FC<EnhancedLayoutProps> = ({
           {headerActions}
 
           <div className="flex items-center gap-2">
+            
             {/* Settings button */}
             <Button
               variant="ghost"

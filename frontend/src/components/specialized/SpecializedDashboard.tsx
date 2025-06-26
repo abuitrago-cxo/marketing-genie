@@ -21,6 +21,8 @@ import {
 import { cn } from '@/lib/utils';
 import { AgentMetricsDisplay } from './AgentMetricsDisplay';
 import { useSpecializedGraphs } from '@/hooks/useSpecializedGraphs';
+import { getApiBaseUrl } from '@/config/api';
+import ErrorState from '@/components/ui/ErrorState';
 
 interface SystemHealth {
   status: 'healthy' | 'degraded' | 'unhealthy' | 'error';
@@ -412,8 +414,8 @@ export const SpecializedDashboard: React.FC<SpecializedDashboardProps> = ({ clas
       setError(null);
 
       const [healthResponse, metricsResponse] = await Promise.all([
-        fetch('/api/v1/specialized/health'),
-        fetch('/api/v1/specialized/metrics/workflow?time_range_hours=24')
+        fetch(`${getApiBaseUrl()}/specialized/health`),
+        fetch(`${getApiBaseUrl()}/specialized/metrics/workflow?time_range_hours=24`)
       ]);
 
       if (!healthResponse.ok || !metricsResponse.ok) {
@@ -454,24 +456,9 @@ export const SpecializedDashboard: React.FC<SpecializedDashboardProps> = ({ clas
     );
   }
 
-  if (error) {
-    return (
-      <div className={cn("space-y-6", className)}>
-        <Card>
-          <CardContent className="p-6 text-center">
-            <AlertCircle size={24} className="mx-auto mb-2 text-red-500" />
-            <p className="text-sm text-muted-foreground mb-3">{error}</p>
-            <Button variant="outline" size="sm" onClick={handleRefresh}>
-              <RefreshCw size={14} className="mr-2" />
-              Retry
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  return (
+  return error ? (
+    <ErrorState message={error} onRetry={handleRefresh} />
+  ) : (
     <div className={cn("space-y-6", className)}>
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Specialized Agents Dashboard</h2>

@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
+import { getApiBaseUrl } from '@/config/api';
 
 export interface ChatMessage {
   id: string;
@@ -50,7 +51,7 @@ export const useChatWithMemory = (options: ChatOptions = {}) => {
     setMessages(prev => [...prev, userMessage]);
 
     try {
-      const response = await fetch('/api/v1/specialized/chat', {
+      const response = await fetch(`${getApiBaseUrl()}/specialized/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../auth/Auth0Provider';
+import { useNavigate } from 'react-router-dom';
+// import { useAuth } from '../auth/Auth0Provider'; // Auth0 removed
+import { API_ENDPOINTS } from '@/config/api';
+import ErrorState from '@/components/ui/ErrorState';
 
 // Types
 interface Repository {
@@ -43,7 +46,10 @@ interface RepositoryAnalysis {
 }
 
 export const GitHubRepositories: React.FC = () => {
-  const { getAccessTokenSilently, githubConnected } = useAuth();
+  const navigate = useNavigate();
+  // const { getAccessTokenSilently, githubConnected } = useAuth(); // Auth0 removed
+  const githubConnected = true;
+
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,18 +59,13 @@ export const GitHubRepositories: React.FC = () => {
 
   // Fetch repositories
   const fetchRepositories = async () => {
-    if (!githubConnected) return;
+    // if (!githubConnected) return; // Auth0 removed, placeholder above
 
     setLoading(true);
     setError(null);
 
     try {
-      const token = await getAccessTokenSilently();
-      const response = await fetch('/api/v1/github/repositories', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await fetch(API_ENDPOINTS.GITHUB.REPOSITORIES);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch repositories: ${response.statusText}`);
@@ -85,13 +86,11 @@ export const GitHubRepositories: React.FC = () => {
     setError(null);
 
     try {
-      const token = await getAccessTokenSilently();
-      const [owner, repoName] = repo.full_name.split('/');
+        const [owner, repoName] = repo.full_name.split('/');
       
-      const response = await fetch(`/api/v1/github/repositories/${owner}/${repoName}/analyze`, {
+      const response = await fetch(`${API_ENDPOINTS.GITHUB.BASE}/repositories/${owner}/${repoName}/analyze`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -119,13 +118,11 @@ export const GitHubRepositories: React.FC = () => {
   // Import repository
   const importRepository = async (repo: Repository) => {
     try {
-      const token = await getAccessTokenSilently();
-      const [owner, repoName] = repo.full_name.split('/');
+        const [owner, repoName] = repo.full_name.split('/');
       
-      const response = await fetch(`/api/v1/github/repositories/${owner}/${repoName}/import`, {
+      const response = await fetch(`${API_ENDPOINTS.GITHUB.BASE}/repositories/${owner}/${repoName}/import`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -142,7 +139,25 @@ export const GitHubRepositories: React.FC = () => {
       }
 
       const importData = await response.json();
-      alert(`Repository imported successfully! Project ID: ${importData.project_id}`);
+      if (importData?.project_id) {
+        navigate(`/projects?runEngineer=${importData.project_id}`);
+      }
+      // Trigger Code Engineer agent task for the imported project
+        try {
+          await fetch(API_ENDPOINTS.AGENTS.CODE_ENGINEER_TASKS, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              project_id: importData.project_id,
+              action: 'improve_codebase'
+            })
+          });
+        } catch (e) {
+          console.error('Failed to create code engineer task', e);
+        }
+        alert(`Repository imported successfully! Project ID: ${importData.project_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed');
     }
@@ -186,16 +201,7 @@ export const GitHubRepositories: React.FC = () => {
 
       {/* Error Display */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-          <div className="flex">
-            <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-            </svg>
-            <div className="ml-3">
-              <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
-            </div>
-          </div>
-        </div>
+        <ErrorState message={error} onRetry={fetchRepositories} className="my-4" />
       )}
 
       {/* Repository List */}
