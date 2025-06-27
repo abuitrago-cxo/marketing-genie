@@ -68,8 +68,8 @@ Example:
 ```json
 {{
     "is_sufficient": true, // or false
-    "knowledge_gap": "The summary lacks information about performance metrics and benchmarks", // "" if is_sufficient is true
-    "follow_up_queries": ["What are typical performance benchmarks and metrics used to evaluate [specific technology]?"] // [] if is_sufficient is true
+    "knowledge_gap": "The summary lacks information about performance metrics and benchmarks", // "" if is_sufficient is false
+    "follow_up_queries": ["What are typical performance benchmarks and metrics used to evaluate [specific technology]?"] // [] if is_sufficient is false
 }}
 ```
 
