@@ -35,6 +35,7 @@ Thumbs.db
 
 # Optional backend venv (if created in root)
 #.venv/ 
+.python-version
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

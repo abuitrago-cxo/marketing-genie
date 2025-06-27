@@ -28,6 +28,8 @@ export default function App() {
     assistantId: "agent",
     messagesKey: "messages",
     onUpdateEvent: (event: any) => {
+      console.log("event", event);
+      console.log("event data", event.data);
       let processedEvent: ProcessedEvent | null = null;
       if (event.generate_query) {
         processedEvent = {
@@ -48,10 +50,34 @@ export default function App() {
           }.`,
         };
       } else if (event.reflection) {
-        processedEvent = {
-          title: "Reflection",
-          data: "Analysing Web Research Results",
-        };
+        console.log("reflection event received:", event.reflection);
+        console.log("Type of event.reflection.follow_up_queries:", typeof event.reflection?.follow_up_queries);
+        if (event.reflection.is_sufficient) {
+            processedEvent = {
+                title: "Reflection",
+                data: "Search successful, generating final answer."
+            };
+        } else if (event.reflection.follow_up_queries) {
+          console.log("Is event.reflection.follow_up_queries an Array?", Array.isArray(event.reflection.follow_up_queries));
+          if (Array.isArray(event.reflection.follow_up_queries)) {
+            processedEvent = {
+              title: "Reflection",
+              data: `Need more information, searching for ${event.reflection.follow_up_queries.join(", ")}`,
+            };
+          } else {
+            console.error("CRITICAL ERROR: event.reflection.follow_up_queries is NOT an array!", event.reflection.follow_up_queries);
+            processedEvent = {
+              title: "Reflection (Error)",
+              data: `Unexpected data type for follow-up queries: ${typeof event.reflection.follow_up_queries}. Value: ${JSON.stringify(event.reflection.follow_up_queries)}`,
+            };
+          }
+        } else {
+            console.error("CRITICAL ERROR: event.reflection.follow_up_queries is null or undefined!", event.reflection.follow_up_queries);
+            processedEvent = {
+                title: "Reflection (Error)",
+                data: "Follow-up queries list is missing.",
+            };
+        }
       } else if (event.finalize_answer) {
         processedEvent = {
           title: "Finalizing Answer",

@@ -78,7 +78,9 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
     )
     # Generate the search queries
     result = structured_llm.invoke(formatted_prompt)
-    return {"search_query": result.query}
+    print(f"\nDEBUG: generate_query result: {result}")
+    print(f"DEBUG: generate_query result.query type: {type(result.query)}, value: {result.query}\n")
+    return {"query_list": result.query}
 
 
 def continue_to_web_research(state: QueryGenerationState):
@@ -170,7 +172,8 @@ def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
         api_key=os.getenv("GEMINI_API_KEY"),
     )
     result = llm.with_structured_output(Reflection).invoke(formatted_prompt)
-
+    print(f"\nDEBUG: reflection result: {result}")
+    print(f"DEBUG: reflection result.follow_up_queries type: {type(result.follow_up_queries)}, value: {result.follow_up_queries}\n")
     return {
         "is_sufficient": result.is_sufficient,
         "knowledge_gap": result.knowledge_gap,

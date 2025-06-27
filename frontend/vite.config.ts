@@ -9,7 +9,10 @@ export default defineConfig({
   base: "/app/",
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      // CHANGE THIS LINE:
+      // From: "@": path.resolve(new URL(".", import.meta.url).pathname, "./src"),
+      // To:
+      '@': path.resolve(process.cwd(), './src'),
     },
   },
   server: {
